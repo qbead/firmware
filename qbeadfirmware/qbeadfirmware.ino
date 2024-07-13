@@ -3,12 +3,39 @@
 #include "Wire.h"               // arduino stdlib
 #include "math.h"               // stdlib
 
+
+#include <bluefruit.h>          // from board setup
+
+BLEClientBas  clientBas;  // battery client
+BLEClientDis  clientDis;  // device information client
+BLEClientUart clientUart; // bleuart client
+
+
 // default configs
-#define QB_LEDPIN 10
-#define QB_PIXELCONFIG NEO_GRB + NEO_KHZ800
+#define QB_LEDPIN 0
+#define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
 #define QB_NSECTIONS 6
 #define QB_NLEGS 12
 #define QB_IMU_ADDR 0x6A
+#define QB_IX 0
+#define QB_IY 2
+#define QB_IZ 1
+#define QB_SX 1
+#define QB_SY 1
+#define QB_SZ 1
+
+#define QB_MAX_PRPH_CONNECTION 2
+
+const uint8_t QB_UUID_SERVICE[] =
+{0x45,0x8d,0x08,0xaa,/*-*/0xd6,0x63,/*-*/0x44,0x25,/*-*/0xbe,0x12,/*-*/0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_COL_CHAR[] =
+{0x45,0x8d,0x08,0xaa,/*-*/0xd6,0x63,/*-*/0x44,0x25,/*-*/0xbe,0x12,/*-*/0x9c,0x35,0xc6+1,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_SPH_CHAR[] =
+{0x45,0x8d,0x08,0xaa,/*-*/0xd6,0x63,/*-*/0x44,0x25,/*-*/0xbe,0x12,/*-*/0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_ACC_CHAR[] =
+{0x45,0x8d,0x08,0xaa,/*-*/0xd6,0x63,/*-*/0x44,0x25,/*-*/0xbe,0x12,/*-*/0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+
+const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
 // TODO manage namespaces better
 static uint32_t color(uint8_t r, uint8_t g, uint8_t b) {
@@ -79,21 +106,45 @@ public:
         const uint16_t pixelconfig = QB_PIXELCONFIG,
         const uint16_t nsections = QB_NSECTIONS,
         const uint16_t nlegs = QB_NLEGS,
-        const uint8_t imu_addr = QB_IMU_ADDR) :
+        const uint8_t  imu_addr = QB_IMU_ADDR,
+        const uint8_t  ix = QB_IX,
+        const uint8_t  iy = QB_IY,
+        const uint8_t  iz = QB_IZ,
+        const bool  sx = QB_SX,
+        const bool  sy = QB_SY,
+        const bool  sz = QB_SZ
+        ) :
       imu(LSM6DS3(I2C_MODE,imu_addr)),
       pixels(Adafruit_NeoPixel(nlegs * (nsections - 1) + 2, pin00, pixelconfig)),
       nsections(nsections),
       nlegs(nlegs),
       theta_quant(180 / nsections),
-      phi_quant(360 / nlegs) { 
+      phi_quant(360 / nlegs),
+      ix(ix), iy(iy), iz(iz),
+      sx(sx), sy(sy), sz(sz),
+      bleservice(QB_UUID_SERVICE),
+      blecharcol(QB_UUID_COL_CHAR),
+      blecharsph(QB_UUID_SPH_CHAR),
+      blecharacc(QB_UUID_ACC_CHAR)
+      { 
   };
 
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
-  const int nsections;
-  const int nlegs;
-  const int theta_quant;
-  const int phi_quant;
+
+  BLEService bleservice;
+  BLECharacteristic blecharcol;
+  BLECharacteristic blecharsph;
+  BLECharacteristic blecharacc;
+  uint8_t connection_count = 0;
+
+  const uint8_t nsections;
+  const uint8_t nlegs;
+  const uint8_t theta_quant;
+  const uint8_t phi_quant;
+  const uint8_t ix, iy, iz;
+  const bool sx, sy, sz;
+  float rbuffer[3];
   float x,y,z,rx,ry,rz; // filtered and raw acc, in units of g
   float t,p; // theta and phi according to gravity
   float t_imu; // last update from the IMU
@@ -106,14 +157,35 @@ public:
     clear();
     setBrightness(10);
     
-    Serial.println("XIAO BLE Sense test of LSM6DS3 compiled on " __DATE__ " at " __TIME__);
-    Serial.println("Seeed mbed-enabled nrf52 Boards-> Seeed XIAO BLE Sense - nrf52480");
+    Serial.println("qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
     if (!imu.begin()) {
         Serial.println("IMU error");
     } else {
         Serial.println("IMU OK");
     }
-    
+
+    Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
+    Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
+    bleservice.begin();
+    blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharcol.setUserDescriptor("rgb color");
+    blecharcol.setFixedLen(3);
+    blecharcol.begin();
+    blecharcol.write(zerobuffer20, 3);
+    blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharsph.setUserDescriptor("spherical coordinates");
+    blecharsph.setFixedLen(2);
+    blecharsph.begin();
+    blecharsph.write(zerobuffer20, 2);
+    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharacc.setUserDescriptor("xyz acceleration");
+    blecharacc.setFixedLen(3*sizeof(float));
+    blecharacc.begin();
+    blecharacc.write(zerobuffer20, 3*sizeof(float));
+    startBLEadv();
   }
 
   void clear() {
@@ -188,14 +260,13 @@ public:
   }
 
   void readIMU() {
-    /* // The XYZ axes of the accelerometer do not correspond to the XYZ axes of the sphere // TODO have a principled way to correct for these and to configure different ones
-    rx = imu.readFloatAccelX();
-    ry = imu.readFloatAccelY();
-    rz = imu.readFloatAccelZ();
-    */
-    rx = -imu.readFloatAccelX();
-    ry =  imu.readFloatAccelZ();
-    rz =  imu.readFloatAccelY();
+    rbuffer[0] = imu.readFloatAccelX();
+    rbuffer[1] = imu.readFloatAccelY();
+    rbuffer[2] = imu.readFloatAccelZ();
+    rx = (1-2*sx)*rbuffer[ix];
+    ry = (1-2*sy)*rbuffer[iy];
+    rz = (1-2*sz)*rbuffer[iz];
+    
     float t_new = micros();
     float delta = t_new - t_imu;
     t_imu = t_new;
@@ -221,14 +292,53 @@ public:
     Serial.print("\t");
     Serial.print(z);
     Serial.print("\t-1\t1\t");
-
     Serial.print(t);
     Serial.print("\t");
     Serial.print(p);
     Serial.print("\t-360\t360\t");
-    
     Serial.println();
+
+    rbuffer[0] = x;
+    rbuffer[1] = y;
+    rbuffer[2] = z;
+    blecharacc.write(rbuffer, 3*sizeof(float));
+    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    {
+      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
+      {
+        blecharacc.notify(rbuffer, 3*sizeof(float));
+      }
+    }
   }
+
+  void startBLEadv(void)
+  {
+    // Advertising packet
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    Bluefruit.Advertising.addTxPower();
+
+    // Include HRM Service UUID
+    Bluefruit.Advertising.addService(bleservice);
+
+    // Secondary Scan Response packet (optional)
+    // Since there is no room for 'Name' in Advertising packet
+    Bluefruit.ScanResponse.addName();
+    
+    /* Start Advertising
+    * - Enable auto advertising if disconnected
+    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+    * - Timeout for fast mode is 30 seconds
+    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+    * 
+    * For recommended advertising interval
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html   
+    */
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
+  }
+
 }; // end class
 } // end namespace
 
@@ -239,8 +349,16 @@ Qbead::Qbead bead;
 // You can use bead.imu to access the IMU object
 
 void setup() {
+  Serial.println("start");
   bead.begin();
-  bead.setBrightness(255); // way too bright
+  Serial.println("1");
+  bead.setBrightness(25); // way too bright
+  for (int i = 0; i < bead.pixels.numPixels(); i++) {
+    bead.pixels.setPixelColor(i, color(255,255,255));
+    bead.pixels.show();
+    delay(5);
+  }
+  Serial.println("2");
   for (int phi = 0; phi < 360; phi += 30) {
     for (int theta = 0; theta < 180; theta+=3) {
       bead.clear();
@@ -248,13 +366,14 @@ void setup() {
       bead.show();
     }
   }
+  Serial.println("3");
 }
 
 void loop() {
   bead.readIMU();
 
   bead.clear();
-  bead.setBloch_deg_smooth(bead.t, bead.p, color(255,255,255));
+  bead.setBloch_deg_smooth(bead.t, bead.p, color(255,0,255));
   bead.show();
   delay(10);
 }
