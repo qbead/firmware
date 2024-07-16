@@ -142,11 +142,12 @@ public:
   float x,y,z,rx,ry,rz; // filtered and raw acc, in units of g
   float t,p; // theta and phi according to gravity
   float t_imu; // last update from the IMU
+  int c; // color int used by blecharcol, color(255,0,255)
 
   void begin() {
     Serial.begin(9600);
     while (!Serial);
-    
+    c = color(255,0,255);
     pixels.begin();
     clear();
     setBrightness(10);
@@ -159,20 +160,28 @@ public:
     }
 
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
-    Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
+    // FIXME I can't change the name from qbead, the default name just shows up in the bluetooth menu of chrome
+    Bluefruit.setName("qbead_ben | " __DATE__ " " __TIME__);
+    Bluefruit.Periph.setConnectCallback(connect_callback);
+
     bleservice.begin();
+
     blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharcol.setUserDescriptor("rgb color");
     blecharcol.setFixedLen(3);
+    blecharcol.setWriteCallback(set_qbead_color_ble);
     blecharcol.begin();
     blecharcol.write(zerobuffer20, 3);
+
     blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharsph.setUserDescriptor("spherical coordinates");
     blecharsph.setFixedLen(2);
+    blecharsph.setWriteCallback(set_qbead_theta_phi);
     blecharsph.begin();
     blecharsph.write(zerobuffer20, 2);
+
     blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
     blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharacc.setUserDescriptor("xyz acceleration");
@@ -253,6 +262,8 @@ public:
     setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
   }
 
+
+
   void readIMU() {
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
@@ -275,9 +286,9 @@ public:
       y = d*ry+(1-d)*y;
       z = d*rz+(1-d)*z;
     }
-
-    t = theta(x, y, z)*180/3.14159;
-    p = phi(x, y, z)*180/3.14159;
+    // Removed overwriting of t and p here by the IMU so that we can write to them with the BLE characteristics
+    // t = theta(x, y, z)*180/3.14159;
+    // p = phi(x, y, z)*180/3.14159;
     if (p<0) {p+=360;}// to bring it to [0,360] range
 
     Serial.print(x);
@@ -333,10 +344,82 @@ public:
     Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
   }
 
+  // functions for setting each LED based on a mathematical function of theta and phi
+  double colorFunc(float theta, float phi, float theta_0){
+
+    // return exp(-pow(theta / theta_0,2));
+        return exp(-pow((theta-theta_0) / 30,2));
+
+  }
+
+  double colorFunc_2(float theta, float phi, float theta_0){
+    const float phi_0 = 30;
+    // return exp(-pow(theta / theta_0,2));
+        return exp(-pow((theta) / theta_0,2)); //* exp(-pow((phi) / phi_0,2));
+
+  }
+
+  void calcColorFunc(float theta_0){
+    // idea of operation: loop through each LED on the qbead, determine their theta and phi
+    // then, calculate the color this LED should have based on a mathematical function of theta and phi
+    float theta;
+    float phi;
+    double pixel_val;
+    double pixel_val_2;
+
+    for (float leg = 0; leg < nlegs; leg++){
+      for (float section=0; section < nsections; section++){
+        theta = section / 6 * 180;
+        phi = leg / 12 * 360;
+        pixel_val = colorFunc(theta - t, phi - p, theta_0);// * cos(phi/180 * PI);
+          // Serial.print(theta);
+          // Serial.print("\t");
+          // Serial.print(phi);
+          // Serial.print("\t");
+          // Serial.print(pixel_val);
+          // Serial.print("\t"); 
+          // Serial.print(int(pixel_val*255));
+          // Serial.print("\n");
+       
+          // setLegPixelColor(leg, section, int(pixel_val * 255));
+          pixel_val_2 = colorFunc(theta-180, phi, -theta_0);// * cos(phi/180 * PI);
+          setLegPixelColor(leg, section,  int(pixel_val*255) | int(pixel_val_2*255) << 16);
+
+      }
+    }
+  }
+
 }; // end class
 } // end namespace
 
 Qbead::Qbead bead;
+// BLE callback functions need to be static functions. Is there a better way than having these functions manipulate the global bead object?
+  void set_qbead_color_ble(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
+    bead.c =  (data[2] << 16) | (data[1] << 8) | data[0];
+  }
+
+  void set_qbead_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
+    // ToDo check all this nasty casting
+            Serial.println("callback!");
+
+    bead.t = data[0]*180/255;
+    bead.p = data[1]*360/255;
+    // Serial.println(bead.t);
+    // Serial.println(bead.p);
+
+  }
+
+void connect_callback(uint16_t conn_handle)
+{
+  // Get the reference to current connection
+  BLEConnection* connection = Bluefruit.Connection(conn_handle);
+
+  char central_name[32] = { 0 };
+  connection->getPeerName(central_name, sizeof(central_name));
+
+  Serial.print("Connected to ");
+  Serial.println(central_name);
+}
 
 // You can use bead.strip to access the LED strip object
 // You can use bead.imu to access the IMU object
@@ -360,13 +443,47 @@ void setup() {
     }
   }
   Serial.println("3");
+    bead.readIMU();
+    Serial.println("4");
+
 }
 
-void loop() {
-  bead.readIMU();
+// modes of operation
+#define BREATH_EFFECT true
+#define BLE_SITE false
 
-  bead.clear();
-  bead.setBloch_deg_smooth(bead.t, bead.p, color(255,0,255));
-  bead.show();
-  delay(10);
+void loop() {
+  // Serial.println(bead.t);
+  float theta_0 = 0;
+  if (BREATH_EFFECT){
+    while (theta_0 < 180){
+      
+    bead.readIMU();
+    bead.clear();
+    //bead.setBloch_deg_smooth(bead.t, bead.p, bead.c);
+    bead.calcColorFunc(theta_0);
+    bead.show();
+    delay(10);
+    
+      theta_0 += 2;
+    } 
+    while (theta_0 > 0){
+      
+      bead.readIMU();
+      bead.clear();
+      //bead.setBloch_deg_smooth(bead.t, bead.p, bead.c);
+      bead.calcColorFunc(theta_0);
+      bead.show();
+      delay(10);
+      theta_0 -= 2;
+    }
+  }
+  if (BLE_SITE){
+    bead.readIMU();
+    bead.clear();
+    // t, p and c are set by BLE functionality
+    bead.setBloch_deg_smooth(bead.t, bead.p, bead.c);
+    bead.show();
+    delay(10);
+  }
 }
