@@ -32,7 +32,8 @@ async def ConnectToDevice(device):
     assert type(device) is bleak.backends.device.BLEDevice
     address = device.address
     async with BleakClient(address) as client:
-        services = await client.services
+        print(f'Connected to device: {device}')
+        services = client.services
         print("Services:")
         for service in services:
             print(service)
@@ -40,6 +41,12 @@ async def ConnectToDevice(device):
         print('Characteristics:')
         for characteristic in service.characteristics:
             print(characteristic)
+        col = service.get_characteristic(colUuid)
+        color = await client.read_gatt_char(col)
+        print(f'Color: {color}')
+        await client.write_gatt_char(col, bytearray([255, 255, 255]))
+        color = await client.read_gatt_char(col)
+        print(f'Color: {color}')
 
 async def main():
     devices = await discover()
