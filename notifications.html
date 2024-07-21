@@ -25,20 +25,63 @@
         overflow-y: scroll;
       }
     </style>
+    <link rel="stylesheet" href="estilos.css">
   </head>
 
   <body>
+    <header class="bg_animate">
+      <div class="header_nav">
+        <div class="contenedor">
+            <h1>Qbead remote controller</h1>
+            <nav>
+              <div class="banner_img">
+                <img src="TU-delft.png" alt="">
+            </div>
+            </nav>
+      </div>
+      <div class="container">
+        <div class="left">
+            <form class="form-style">
+                <button id="startNotifications" class="button">Start connection</button>
+                <button id="stopNotifications" class="button">Stop connection</button>
+                <div class="range-container">
+                  <div class="range-wrapper" style="margin-top: 15%;">
+                      <label for="thetarange" class="range-label">θ:</label>
+                      <input type="range" min="0" max="360" value="0" id="thetarange" class="range-input" disabled>
+                      <br>
+                      <label for="phirange" class="range-label">φ:</label>
+                      <input type="range" min="0" max="180" value="0" id="phirange" class="range-input" disabled>
+                  </div>
+                  <div class="button-wrapper" style="margin-top: 15%;">
+                    <button id="rotationTheta" class="button">Flip θ</button>
+                    <button id="rotationPhi" class="button">Flip φ</button>
+                </div>
+              </div>
+            </form>
+            <h3 class="form-style" style="margin-top: 5%;">Live Output</h3>
+            <div id="output" class="output form-style">
+                <div id="content"></div>
+                <div id="status"></div>
+                <pre id="log" style="overflow: hidden;"></pre>
+            </div>
+        </div>
+        <div class="right">
+            <h1>Acceleration Sensor</h1>
+            <div id="viz" style="margin-top: 15%;">
+                <div id="vizCoin" style="height:250px;width:250px;border-radius:125px;background:white;">
+                    <div style="border-radius: 25px;margin:auto;height:50%;width:50%;border:solid gray;border-width:0 10px 10px 0;transform:rotate(-135deg);">
+                        <div style="border-radius: 25px;margin:auto;height:100%;width:10%;border:solid rgb(114, 142, 235);border-width:0 10px 0 10px;transform:rotate(135deg);">
+                            <div style="margin:auto;height:100%;width:100%;background-color:rgb(43, 43, 118);"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-<form>
-  <button id="startNotifications">Start connection</button>
-  <button id="stopNotifications">Stop connection</button>
-  <div>
-    <br>
-    θ:<input type="range" min="0" max="360" value="0" id="thetarange" disabled>
-    <br>
-    φ:<input type="range" min="0" max="180" value="0" id="phirange" disabled>
-  </div>
-</form>
+
+
+
 
 <script>
   var qbeadTracker = {
@@ -68,24 +111,6 @@
     }
   };
 </script>
-
-<h3>Live Output</h3>
-<div id="output" class="output">
-  <div id="content"></div>
-  <div id="status"></div>
-  <pre id="log"></pre>
-</div>
-
-<h3>Acceleration Sensor</h3>
-<div id="viz">
-  <div id="vizCoin" style="height:250px;width:250px;border-radius:125px;background:white;">
-    <div style="margin:auto;height:50%;width:50%;border:solid gray;border-width:0 10px 10px 0;transform:rotate(-135deg);">
-      <div style="margin:auto;height:100%;width:10%;border:solid rgb(118, 43, 43);border-width:0 10px 0 10px;transform:rotate(135deg);">
-        <div style="margin:auto;height:100%;width:100%;background-color:rgb(43, 43, 118);"></div>
-      </div>
-    </div>
-  </div>
-</div>
     
 <script>
 var accCharacteristic;
@@ -153,6 +178,36 @@ function onStopButtonClick() {
   document.querySelector('#phirange').disabled=false;
 }
 
+document.getElementById('rotationTheta').addEventListener('click', function() {
+        let thetaRange = document.getElementById('thetarange');
+        let maxThetaValue = parseInt(thetaRange.max);
+        let currentThetaValue = parseInt(thetaRange.value);
+        let newThetaValue = maxThetaValue - currentThetaValue;
+        thetaRange.value = newThetaValue;
+        onRangeChange('thetarange', newThetaValue);
+    });
+
+    document.getElementById('rotationPhi').addEventListener('click', function() {
+        let phiRange = document.getElementById('phirange');
+        let maxPhiValue = parseInt(phiRange.max);
+        let currentPhiValue = parseInt(phiRange.value);
+        let newPhiValue = maxPhiValue - currentPhiValue;
+        phiRange.value = newPhiValue;
+        onRangeChange('phirange', newPhiValue);
+    });
+
+    function onRangeChange(id, value) {
+        let encoder = new TextEncoder();
+        let myDescriptor = { writeValue: (v) => Promise.resolve() }; // Mock function for demonstration
+        myDescriptor.writeValue(encoder.encode(value.toString()))
+        .then(_ => {
+            log('> Characteristic User Description changed to: ' + value);
+        })
+        .catch(error => {
+            log('Argh! ' + error);
+        });
+    }
+
 function onPhiRangeChange() {
   myDescriptor.writeValue(encoder.encode(value))
   .then(_ => {
@@ -195,51 +250,64 @@ function handleNotifications(event) {
 </script>
 
 
-<script>
-  document.querySelector('#startNotifications').addEventListener('click', function(event) {
-    event.stopPropagation();
-    event.preventDefault();
+  <script>
+    document.querySelector('#startNotifications').addEventListener('click', function(event) {
+      event.stopPropagation();
+      event.preventDefault();
 
-    if (isWebBluetoothEnabled()) {
-      qbeadTracker.clearLog();
-      onStartButtonClick();
+      if (isWebBluetoothEnabled()) {
+        qbeadTracker.clearLog();
+        onStartButtonClick();
+      }
+    });
+    document.querySelector('#stopNotifications').addEventListener('click', function(event) {
+      event.stopPropagation();
+      event.preventDefault();
+
+      if (isWebBluetoothEnabled()) {
+        onStopButtonClick();
+      }
+    });
+  </script>
+
+  <script>
+    document.querySelector('form').addEventListener('submit', function(event) {
+      event.stopPropagation();
+      event.preventDefault();
+
+      if (isWebBluetoothEnabled()) {
+        qbeadTracker.clearLog();
+        onButtonClick();
+      }
+    });
+  </script>
+
+  <script>
+    log = qbeadTracker.log;
+
+    function isWebBluetoothEnabled() {
+      if (navigator.bluetooth) {
+        return true;
+      } else {
+        qbeadTracker.setStatus('Web Bluetooth API is not available.\n' +
+            'Please make sure the "Experimental Web Platform features" flag is enabled.');
+        return false;
+      }
     }
-  });
-  document.querySelector('#stopNotifications').addEventListener('click', function(event) {
-    event.stopPropagation();
-    event.preventDefault();
-
-    if (isWebBluetoothEnabled()) {
-      onStopButtonClick();
-    }
-  });
-</script>
-
-<script>
-  document.querySelector('form').addEventListener('submit', function(event) {
-    event.stopPropagation();
-    event.preventDefault();
-
-    if (isWebBluetoothEnabled()) {
-      qbeadTracker.clearLog();
-      onButtonClick();
-    }
-  });
-</script>
-
-<script>
-  log = qbeadTracker.log;
-
-  function isWebBluetoothEnabled() {
-    if (navigator.bluetooth) {
-      return true;
-    } else {
-      qbeadTracker.setStatus('Web Bluetooth API is not available.\n' +
-          'Please make sure the "Experimental Web Platform features" flag is enabled.');
-      return false;
-    }
-  }
-</script>
+  </script>
+  <div class="burbujas">
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+    <div class="burbuja"></div>
+  </div>
+</header>
 
   </body>
 </html>
