@@ -9,17 +9,17 @@
 This is a self contained game that can be run on the qbead (for installation, just upload `qbeadfirmware/game_qbead.ino` to the qbead).
 When the game is uploaded, it can be played as follows.
 
-	1. A white led will be illuminated. This led must be aiming at the ceiling.
+1. A white led will be illuminated. This led must be aiming at the ceiling.
 
-	2. *Shake* the qbead to start the game.
+2. *Shake* the qbead to start the game.
 ![](https://github.com/AlvaroGI/qbead-hackathon/blob/main/gifs/start.gif)
 
-	3. The player is the blue led. A random green qubit will appear. The qbead must be rotated to make the player (blue) *capture the target* (green). Once this happens, a new green qubit will appear at random.
+3. The player is the blue led. A random green qubit will appear. The qbead must be rotated to make the player (blue) *capture the target* (green). Once this happens, a new green qubit will appear at random.
 ![](https://github.com/AlvaroGI/qbead-hackathon/blob/main/gifs/game.gif)
 
-	4. The goal of the player is to catch as many green qubits as possible before the *timer* (10 seconds) runs out.
+4. The goal of the player is to catch as many green qubits as possible before the *timer* (10 seconds) runs out.
 
-	5. After the timer runs out, the qbead goes back to the main menu. It will show the white led again. The *highscore* will be shown as a number of pink leds.
+5. After the timer runs out, the qbead goes back to the main menu. It will show the white led again. The *highscore* will be shown as a number of pink leds.
 ![](https://github.com/AlvaroGI/qbead-hackathon/blob/main/gifs/gameover.gif)
 
 ### 2. Interface with JS
