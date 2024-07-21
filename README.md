@@ -2,8 +2,8 @@
 
 ## Bounties
 
-	1. Most creative alternative use of the hardware (see 'Game' section below).
-	2. More polished JS library: updated html interface (see 'Interface' section below).
+1. Most creative alternative use of the hardware (see 'Game' section below).
+2. More polished JS library: updated html interface (see 'Interface' section below).
 
 ### 1. Game: qubit chaser
 This is a self contained game that can be run on the qbead (for installation, just upload `qbeadfirmware/game_qbead.ino` to the qbead).
@@ -24,4 +24,5 @@ When the game is uploaded, it can be played as follows.
 
 ### 2. Interface with JS
 We made visual improvements to the html interface. This can be seen in the updated `notifications.html` file, which requires `estilos.css` and `TU-delft.png`.
+
 ![](https://github.com/AlvaroGI/qbead-hackathon/blob/main/gifs/interface.gif)
