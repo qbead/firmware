@@ -5,54 +5,43 @@ import bleak.backends
 import bleak.backends.device
 import bleak.backends.service
 
+
+
+import lib.qbeadBLE as qble
+
 serviceUuid = "e30c1fc6-359c-12be-2544-63d6aa088d45";
 
 accUuid = "e30c1fc9-359c-12be-2544-63d6aa088d45";
 sphUuid = "e30c1fc8-359c-12be-2544-63d6aa088d45";
 colUuid = "e30c1fc7-359c-12be-2544-63d6aa088d45";
 
-async def discover():
-    devices = await BleakScanner.discover(return_adv=True)
-    for device, adv in devices.values():
-        if device.name is not None and "qbead" in device.name:
-            print(f'Found device: {device}, RSSI: {adv.rssi}')
-    return devices
-
-def selectClosestDevice(devices):
-    max_rssi = 0
-    closest_device = None
-    for device,adv in devices.values():
-        if device.name is not None and "qbead" in device.name and adv.rssi < max_rssi:
-            max_rssi = adv.rssi
-            closest_device = device
-    return closest_device
-
-async def ConnectToDevice(device):
-    print(f'Connecting to device: {device}')
-    assert type(device) is bleak.backends.device.BLEDevice
-    address = device.address
-    async with BleakClient(address) as client:
-        print(f'Connected to device: {device}')
-        services = client.services
-        print("Services:")
-        for service in services:
-            print(service)
-        service = services.get_service(serviceUuid)
-        print('Characteristics:')
-        for characteristic in service.characteristics:
-            print(characteristic)
-        col = service.get_characteristic(colUuid)
-        color = await client.read_gatt_char(col)
+#add as many arguments as you like. just match it to the connectToDevice call below
+async def testBLE(client:BleakClient,one, two, three=None):
+        qble.printServices(client)
+        qble.printCharacteristics(client)
+        color = await qble.readColor(client)
         print(f'Color: {color}')
-        await client.write_gatt_char(col, bytearray([255, 255, 255]))
-        color = await client.read_gatt_char(col)
+        await qble.writeColor(client, 255, 0, 0)
+        color = await qble.readColor(client)
         print(f'Color: {color}')
+        coords = await qble.readAcceleration(client)
+        print(f'Acceleration: {coords}')
+        theta,phi = await qble.readSphericalCoordinates(client)
+        print(f'Spherical coordinates: {theta}, {phi}')
+        await qble.setAccelerationNotification(client, AccelerationNotificationCallback)
+        while True:
+            await asyncio.sleep(1)
+        
+
+async def AccelerationNotificationCallback(sender, data):
+    unpacked = qble.unpackAccelerationData(data)
+    print(f'Acceleration: {unpacked}')
 
 async def main():
-    devices = await discover()
-    closest_device = selectClosestDevice(devices)
+    devices = await qble.discover()
+    closest_device = qble.selectClosestDevice(devices)
     print(f'Closest device: {closest_device}')
-    await ConnectToDevice(closest_device)
+    await qble.ConnectToDevice(closest_device,testBLE, "one", "two", three="three")
 
 asyncio.run(main())
 
