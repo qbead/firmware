@@ -1,6 +1,5 @@
 #include <Arduino.h>
-#include "Qbead.h"
-#include "Helpers.h"
+#include <Qbead.h>
 
 Qbead bead;
 
@@ -18,15 +17,15 @@ void setup() {
         bead.pixels.setPixelColor(i, color(255, 255, 255)); // White color
     }
     bead.show();
-    //delay(50);
-    bead.clear();
-    bead.show();
+    // delay(50);
+    // bead.clear();
 }
 
 void loop() {
-    bead.readIMU();
+
     bead.clear();
+    bead.readIMU();
     bead.setBloch_deg_smooth(bead.getState().getTheta(), bead.getState().getPhi(), color(255, 0, 255));
     bead.show();
-    delay(50); 
+    delay(50);
 }
