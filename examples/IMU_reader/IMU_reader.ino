@@ -1,31 +1,34 @@
 #include <Arduino.h>
-#include <Qbead.h>
+#include <Qbead_init.h>
 
-Qbead bead;
+Qbead::Qbead bead;
 
 void setup() {
-    Serial.begin(9600);
-    while (!Serial);
-
-    Serial.println("Starting Qbead...");
-
-    bead.begin();
-
-    // Light up all LEDs briefly to confirm they work
-    bead.clear();
-    for (int i = 0; i < bead.pixels.numPixels(); i++) {
-        bead.pixels.setPixelColor(i, color(255, 255, 255)); // White color
+  Serial.println("start");
+  bead.begin();
+  Serial.println("1");
+  bead.setBrightness(25); // way too bright
+  for (int i = 0; i < bead.pixels.numPixels(); i++) {
+    bead.pixels.setPixelColor(i, color(255, 255, 255));
+    bead.pixels.show();
+    delay(5);
+  }
+  Serial.println("2");
+  for (int phi = 0; phi < 360; phi += 30) {
+    for (int theta = 0; theta < 180; theta += 3) {
+      bead.clear();
+      bead.setBloch_deg(theta, phi, colorWheel(phi));
+      bead.show();
     }
-    bead.show();
-    // delay(50);
-    // bead.clear();
+  }
+  Serial.println("3");
 }
 
 void loop() {
+  bead.readIMU();
 
-    bead.clear();
-    bead.readIMU();
-    bead.setBloch_deg_smooth(bead.getState().getTheta(), bead.getState().getPhi(), color(255, 0, 255));
-    bead.show();
-    delay(50);
+  bead.clear();
+  bead.setBloch_deg_smooth(bead.t, bead.p, color(255, 0, 255));
+  bead.show();
+  delay(10);
 }

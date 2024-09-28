@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="qbead notification tracker">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Web Bluetooth / Notifications Sample</title>
+    <script>
+      // Add a global error event listener early on in the page load, to help ensure that browsers
+      // which don't support specific functionality still end up displaying a meaningful message.
+      window.addEventListener('error', function(error) {
+        if (qbeadTracker && qbeadTracker.setStatus) {
+          console.error(error);
+          qbeadTracker.setStatus(error.message + ' (Your browser may not support this feature.)');
+          error.preventDefault();
+        }
+      });
+    </script>
+
+    <style>
+      #log {
+        height: 200px;
+        overflow-y: scroll;
+      }
+    </style>
+  </head>
+
+  <body>
+
+<form>
+  <button id="startNotifications">Start connection</button>
+  <button id="stopNotifications">Stop connection</button>
+  <div>
+    <br>
+    θ:<input type="range" min="0" max="360" value="0" id="thetarange" disabled>
+    <br>
+    φ:<input type="range" min="0" max="180" value="0" id="phirange" disabled>
+  </div>
+</form>
+
+<script>
+  var qbeadTracker = {
+    log: function() {
+      var line = Array.prototype.slice.call(arguments).map(function(argument) {
+        return typeof argument === 'string' ? argument : JSON.stringify(argument);
+      }).join(' ');
+
+      document.querySelector('#log').textContent += line + '\n';
+      document.querySelector('#log').scrollTop = document.querySelector('#log').scrollHeight;
+    },
+
+    clearLog: function() {
+      document.querySelector('#log').textContent = '';
+    },
+
+    setStatus: function(status) {
+      document.querySelector('#status').textContent = status;
+    },
+
+    setContent: function(newContent) {
+      var content = document.querySelector('#content');
+      while(content.hasChildNodes()) {
+        content.removeChild(content.lastChild);
+      }
+      content.appendChild(newContent);
+    }
+  };
+</script>
+
+<h3>Live Output</h3>
+<div id="output" class="output">
+  <div id="content"></div>
+  <div id="status"></div>
+  <pre id="log"></pre>
+</div>
+
+<h3>Acceleration Sensor</h3>
+<div id="viz">
+  <div id="vizCoin" style="height:250px;width:250px;border-radius:125px;background:white;">
+    <div style="margin:auto;height:50%;width:50%;border:solid gray;border-width:0 10px 10px 0;transform:rotate(-135deg);">
+      <div style="margin:auto;height:100%;width:10%;border:solid rgb(118, 43, 43);border-width:0 10px 0 10px;transform:rotate(135deg);">
+        <div style="margin:auto;height:100%;width:100%;background-color:rgb(43, 43, 118);"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+<script>
+var accCharacteristic;
+var sphCharacteristic;
+var colCharacteristic;
+
+function onStartButtonClick() {
+  let serviceUuid = "e30c1fc6-359c-12be-2544-63d6aa088d45";
+
+  let accUuid = "e30c1fc9-359c-12be-2544-63d6aa088d45";
+  let sphUuid = "e30c1fc8-359c-12be-2544-63d6aa088d45";
+  let colUuid = "e30c1fc7-359c-12be-2544-63d6aa088d45";
+
+  log('Requesting Bluetooth Device...');
+  navigator.bluetooth.requestDevice(
+    {
+      filters: [{services: [serviceUuid]}]
+    }
+  )
+  .then(device => {
+    log('Connecting to GATT Server...');
+    return device.gatt.connect();
+  })
+  .then(server => {
+    log('Getting Service...');
+    return server.getPrimaryService(serviceUuid);
+  })
+  .then(service => {
+    log('Getting Characteristics...');
+    
+    service.getCharacteristic(sphUuid).then(ch => {
+      sphCharacteristic=ch;
+      document.querySelector('#thetarange').disabled=false;
+      document.querySelector('#phirange').disabled=false;
+    });
+    service.getCharacteristic(colUuid).then(ch => {colCharacteristic=ch;});
+    return service.getCharacteristic(accUuid);
+  })
+  .then(characteristic => {
+    accCharacteristic = characteristic;
+    return accCharacteristic.startNotifications().then(_ => {
+      log('> Notifications started');
+      accCharacteristic.addEventListener('characteristicvaluechanged',
+          handleNotifications);
+    });
+  })
+  .catch(error => {
+    log('Argh! ' + error);
+  });
+}
+
+function onStopButtonClick() {
+  if (accCharacteristic) {
+    accCharacteristic.stopNotifications()
+    .then(_ => {
+      log('> Notifications stopped');
+      accCharacteristic.removeEventListener('characteristicvaluechanged',
+          handleNotifications);
+    })
+    .catch(error => {
+      log('Argh! ' + error);
+    });
+  }
+  document.querySelector('#thetarange').disabled=false;
+  document.querySelector('#phirange').disabled=false;
+}
+
+function onPhiRangeChange() {
+  myDescriptor.writeValue(encoder.encode(value))
+  .then(_ => {
+    log('> Characteristic User Description changed to: ' + value);
+  })
+  .catch(error => {
+    log('Argh! ' + error);
+  });
+}
+
+function phi(x, y, z) {
+  let ll = x*x+y*y+z*z;
+  let l = Math.sqrt(ll);
+  let p = Math.atan2(y,x);
+  let t = Math.acos(z/l);
+  return p;
+}
+function theta(x, y, z) {
+  let ll = x*x+y*y+z*z;
+  let l = Math.sqrt(ll);
+  let p = Math.atan2(y,x);
+  let t = Math.acos(z/l);
+  return t;
+}
+
+function handleNotifications(event) {
+  new Uint8Array(event.target.value.buffer).reverse();
+  let value = event.target.value;
+  let z = value.getFloat32(0);
+  let y = value.getFloat32(4);
+  let x = value.getFloat32(8);
+  // Convert raw data bytes to hex values just for the sake of showing something.
+  // In the "real" world, you'd use data.getUint8, data.getUint16 or even
+  // TextDecoder to process raw data bytes.
+  let t = theta(x, y, z)*180/3.14159;
+  let p = phi(x, y, z)*180/3.14159;
+  log(`> ${x.toFixed(3)} ${y.toFixed(3)} ${z.toFixed(3)} ${t.toFixed(0)} ${p.toFixed(0)} `);
+  document.querySelector('#vizCoin').style.transform = `rotateY(${p}deg) rotateZ(${t}deg)`;
+}
+</script>
+
+
+<script>
+  document.querySelector('#startNotifications').addEventListener('click', function(event) {
+    event.stopPropagation();
+    event.preventDefault();
+
+    if (isWebBluetoothEnabled()) {
+      qbeadTracker.clearLog();
+      onStartButtonClick();
+    }
+  });
+  document.querySelector('#stopNotifications').addEventListener('click', function(event) {
+    event.stopPropagation();
+    event.preventDefault();
+
+    if (isWebBluetoothEnabled()) {
+      onStopButtonClick();
+    }
+  });
+</script>
+
+<script>
+  document.querySelector('form').addEventListener('submit', function(event) {
+    event.stopPropagation();
+    event.preventDefault();
+
+    if (isWebBluetoothEnabled()) {
+      qbeadTracker.clearLog();
+      onButtonClick();
+    }
+  });
+</script>
+
+<script>
+  log = qbeadTracker.log;
+
+  function isWebBluetoothEnabled() {
+    if (navigator.bluetooth) {
+      return true;
+    } else {
+      qbeadTracker.setStatus('Web Bluetooth API is not available.\n' +
+          'Please make sure the "Experimental Web Platform features" flag is enabled.');
+      return false;
+    }
+  }
+</script>
+
+  </body>
+</html>
