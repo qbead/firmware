@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="description" content="qbead notification tracker">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    
+
     <title>Web Bluetooth / Notifications Sample</title>
     <script>
       // Add a global error event listener early on in the page load, to help ensure that browsers
@@ -86,7 +86,7 @@
     </div>
   </div>
 </div>
-    
+
 <script>
 var accCharacteristic;
 var sphCharacteristic;
@@ -115,7 +115,7 @@ function onStartButtonClick() {
   })
   .then(service => {
     log('Getting Characteristics...');
-    
+
     service.getCharacteristic(sphUuid).then(ch => {
       sphCharacteristic=ch;
       document.querySelector('#thetarange').disabled=false;
@@ -213,9 +213,28 @@ function handleNotifications(event) {
       onStopButtonClick();
     }
   });
-</script>
 
-<script>
+  var thetaInput = document.querySelector('#thetarange');
+  thetaInput.addEventListener('change', function(event) {
+    event.stopPropagation();
+    event.preventDefault();
+    console.log(thetaInput.value);
+    if (isWebBluetoothEnabled()) {
+      let newthetaphi = Uint8Array.of(thetaInput.value, phiInput.value);
+      sphCharacteristic.writeValue(newthetaphi);
+    }
+  });
+  var phiInput = document.querySelector('#phirange');
+  phiInput.addEventListener('change', function(event) {
+    event.stopPropagation();
+    event.preventDefault();
+    console.log(phiInput.value);
+    if (isWebBluetoothEnabled()) {
+      let newthetaphi = Uint8Array.of(thetaInput.value, phiInput.value);
+      sphCharacteristic.writeValue(newthetaphi);
+    }
+  });
+
   document.querySelector('form').addEventListener('submit', function(event) {
     event.stopPropagation();
     event.preventDefault();
