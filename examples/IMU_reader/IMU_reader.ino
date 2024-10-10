@@ -3,16 +3,15 @@
 Qbead::Qbead bead;
 
 void setup() {
-  Serial.println("start");
   bead.begin();
-  Serial.println("1");
   bead.setBrightness(25); // way too bright
+  Serial.println("testing all pixels discretely");
   for (int i = 0; i < bead.pixels.numPixels(); i++) {
     bead.pixels.setPixelColor(i, color(255, 255, 255));
     bead.pixels.show();
     delay(5);
   }
-  Serial.println("2");
+  Serial.println("testing smooth transition between pixels");
   for (int phi = 0; phi < 360; phi += 30) {
     for (int theta = 0; theta < 180; theta += 3) {
       bead.clear();
@@ -20,14 +19,12 @@ void setup() {
       bead.show();
     }
   }
-  Serial.println("3");
+  Serial.println("starting inertial tracking");
 }
 
 void loop() {
   bead.readIMU();
-
   bead.clear();
   bead.setBloch_deg_smooth(bead.t, bead.p, color(255, 0, 255));
   bead.show();
-  delay(10);
 }
