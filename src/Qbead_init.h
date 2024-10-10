@@ -7,7 +7,7 @@
 #include <LSM6DS3.h>
 #include <math.h>
 
-// #include <bluefruit.h>          // Commented out for Seeed XIAO BLE
+#include <bluefruit.h>
 
 // default configs
 #define QB_LEDPIN 0
@@ -22,7 +22,7 @@
 #define QB_SY 0
 #define QB_SZ 1
 
-// #define QB_MAX_PRPH_CONNECTION 2  // Commented out for Seeed XIAO BLE
+#define QB_MAX_PRPH_CONNECTION 2
 
 const uint8_t QB_UUID_SERVICE[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
@@ -113,20 +113,20 @@ public:
         theta_quant(180 / nsections),
         phi_quant(360 / nlegs),
         ix(ix), iy(iy), iz(iz),
-        sx(sx), sy(sy), sz(sz)
-        // , bleservice(QB_UUID_SERVICE)           // Commented out for Seeed XIAO BLE
-        // , blecharcol(QB_UUID_COL_CHAR)         // Commented out for Seeed XIAO BLE
-        // , blecharsph(QB_UUID_SPH_CHAR)         // Commented out for Seeed XIAO BLE
-        // , blecharacc(QB_UUID_ACC_CHAR)         // Commented out for Seeed XIAO BLE
+        sx(sx), sy(sy), sz(sz),
+        bleservice(QB_UUID_SERVICE),
+        blecharcol(QB_UUID_COL_CHAR),
+        blecharsph(QB_UUID_SPH_CHAR),
+        blecharacc(QB_UUID_ACC_CHAR)
         {}
 
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
-  // BLEService bleservice;        // Commented out for Seeed XIAO BLE
-  // BLECharacteristic blecharcol; // Commented out for Seeed XIAO BLE
-  // BLECharacteristic blecharsph; // Commented out for Seeed XIAO BLE
-  // BLECharacteristic blecharacc; // Commented out for Seeed XIAO BLE
+  BLEService bleservice;
+  BLECharacteristic blecharcol;
+  BLECharacteristic blecharsph;
+  BLECharacteristic blecharacc;
   uint8_t connection_count = 0;
 
   const uint8_t nsections;
@@ -142,7 +142,7 @@ public:
 
   void begin() {
     Serial.begin(9600);
-    while (!Serial);
+    while (!Serial); // TODO some form of warning or a way to give up if Serial never becomes available
 
     pixels.begin();
     clear();
@@ -155,24 +155,28 @@ public:
       Serial.println("IMU OK");
     }
 
-    // Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);   // Commented out for Seeed XIAO BLE
-    // Bluefruit.setName("qbead | " __DATE__ " " __TIME__);   // Commented out for Seeed XIAO BLE
-    // bleservice.begin();   // Commented out for Seeed XIAO BLE
-    // blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);  // Commented out for Seeed XIAO BLE
-    // blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);        // Commented out for Seeed XIAO BLE
-    // blecharcol.setUserDescriptor("rgb color");                   // Commented out for Seeed XIAO BLE
-    // blecharcol.setFixedLen(3);                                   // Commented out for Seeed XIAO BLE
-    // blecharcol.begin();                                          // Commented out for Seeed XIAO BLE
-    // blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);  // Commented out for Seeed XIAO BLE
-    // blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);        // Commented out for Seeed XIAO BLE
-    // blecharsph.setUserDescriptor("spherical coordinates");       // Commented out for Seeed XIAO BLE
-    // blecharsph.setFixedLen(2);                                   // Commented out for Seeed XIAO BLE
-    // blecharsph.begin();                                          // Commented out for Seeed XIAO BLE
-    // blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY); // Commented out for Seeed XIAO BLE
-    // blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);        // Commented out for Seeed XIAO BLE
-    // blecharacc.setUserDescriptor("xyz acceleration");            // Commented out for Seeed XIAO BLE
-    // blecharacc.setFixedLen(3 * sizeof(float));                   // Commented out for Seeed XIAO BLE
-    // blecharacc.begin();                                          // Commented out for Seeed XIAO BLE
+    Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
+    Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
+    bleservice.begin();
+    blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharcol.setUserDescriptor("rgb color");
+    blecharcol.setFixedLen(3);
+    blecharcol.begin();
+    blecharcol.write(zerobuffer20, 3);
+    blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharsph.setUserDescriptor("spherical coordinates");
+    blecharsph.setFixedLen(2);
+    blecharsph.begin();
+    blecharsph.write(zerobuffer20, 2);
+    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharacc.setUserDescriptor("xyz acceleration");
+    blecharacc.setFixedLen(3*sizeof(float));
+    blecharacc.begin();
+    blecharacc.write(zerobuffer20, 3*sizeof(float));
+    startBLEadv();
   }
 
   void clear() {
@@ -250,30 +254,28 @@ public:
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
     rbuffer[2] = imu.readFloatAccelZ();
-    rx = (1 - 2 * sx) * rbuffer[ix];
-    ry = (1 - 2 * sy) * rbuffer[iy];
-    rz = (1 - 2 * sz) * rbuffer[iz];
+    rx = (1-2*sx)*rbuffer[ix];
+    ry = (1-2*sy)*rbuffer[iy];
+    rz = (1-2*sz)*rbuffer[iz];
 
     float t_new = micros();
     float delta = t_new - t_imu;
     t_imu = t_new;
-    const float T = 100000; // 100 ms
+    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
     if (delta > 100000) {
       x = rx;
       y = ry;
       z = rz;
     } else {
-      float d = delta / T;
-      x = d * rx + (1 - d) * x;
-      y = d * ry + (1 - d) * y;
-      z = d * rz + (1 - d) * z;
+      float d = delta/T;
+      x = d*rx+(1-d)*x;
+      y = d*ry+(1-d)*y;
+      z = d*rz+(1-d)*z;
     }
 
-    t = theta(x, y, z) * 180 / 3.14159;
-    p = phi(x, y, z) * 180 / 3.14159;
-    if (p < 0) {
-      p += 360;
-    } // to bring it to [0,360] range
+    t = theta(x, y, z)*180/3.14159;
+    p = phi(x, y, z)*180/3.14159;
+    if (p<0) {p+=360;}// to bring it to [0,360] range
 
     Serial.print(x);
     Serial.print("\t");
@@ -286,8 +288,50 @@ public:
     Serial.print(p);
     Serial.print("\t-360\t360\t");
     Serial.println();
+
+    rbuffer[0] = x;
+    rbuffer[1] = y;
+    rbuffer[2] = z;
+    blecharacc.write(rbuffer, 3*sizeof(float));
+    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    {
+      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
+      {
+        blecharacc.notify(rbuffer, 3*sizeof(float));
+      }
+    }
   }
-};
+
+  void startBLEadv(void)
+  {
+    // Advertising packet
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    Bluefruit.Advertising.addTxPower();
+
+    // Include HRM Service UUID
+    Bluefruit.Advertising.addService(bleservice);
+
+    // Secondary Scan Response packet (optional)
+    // Since there is no room for 'Name' in Advertising packet
+    Bluefruit.ScanResponse.addName();
+
+    /* Start Advertising
+    * - Enable auto advertising if disconnected
+    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+    * - Timeout for fast mode is 30 seconds
+    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+    *
+    * For recommended advertising interval
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html
+    */
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
+  }
+
+}; // end class
+
 
 } // end namespace
 
