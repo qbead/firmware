@@ -91,6 +91,18 @@ float theta(float x, float y, float z) {
   return theta;
 }
 
+void connect_callback(uint16_t conn_handle)
+{
+  // Get the reference to current connection
+  BLEConnection* connection = Bluefruit.Connection(conn_handle);
+
+  char central_name[32] = { 0 };
+  connection->getPeerName(central_name, sizeof(central_name));
+
+  Serial.print("Connected to "); // TODO take care of cases where Serial is not available
+  Serial.println(central_name);
+}
+
 namespace Qbead {
 
 class Qbead {
@@ -120,6 +132,8 @@ public:
         blecharacc(QB_UUID_ACC_CHAR)
         {}
 
+  static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
+
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
@@ -137,12 +151,23 @@ public:
   const bool sx, sy, sz;
   float rbuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
-  float t, p;                // theta and phi according to gravity
-  float t_imu;               // last update from the IMU
+  float t_acc, p_acc;        // theta and phi according to gravity
+  float T_imu;             // last update from the IMU
 
-  uint32_t c; // color(255,0,255)
+  float t_ble, p_ble; // theta and phi
+  uint32_t c_ble; // color
+
+  static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
+      singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
+  }
+
+  static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
+      singletoninstance->t_ble = data[0]*180/255;
+      singletoninstance->p_ble = data[1]*360/255;
+  }
 
   void begin() {
+    singletoninstance = this;
     Serial.begin(9600);
     while (!Serial); // TODO some form of warning or a way to give up if Serial never becomes available
 
@@ -165,14 +190,14 @@ public:
     blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharcol.setUserDescriptor("rgb color");
     blecharcol.setFixedLen(3);
-    blecharcol.setWriteCallback(set_qbead_color_ble);
+    blecharcol.setWriteCallback(ble_callback_color);
     blecharcol.begin();
     blecharcol.write(zerobuffer20, 3);
     blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharsph.setUserDescriptor("spherical coordinates");
     blecharsph.setFixedLen(2);
-    blecharsph.setWriteCallback(set_qbead_theta_phi);
+    blecharsph.setWriteCallback(ble_callback_theta_phi);
     blecharsph.begin();
     blecharsph.write(zerobuffer20, 2);
     blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
@@ -263,9 +288,9 @@ public:
     ry = (1-2*sy)*rbuffer[iy];
     rz = (1-2*sz)*rbuffer[iz];
 
-    float t_new = micros();
-    float delta = t_new - t_imu;
-    t_imu = t_new;
+    float T_new = micros();
+    float delta = T_new - T_imu;
+    T_imu = T_new;
     const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
     if (delta > 100000) {
       x = rx;
@@ -278,9 +303,9 @@ public:
       z = d*rz+(1-d)*z;
     }
 
-    t = theta(x, y, z)*180/3.14159;
-    p = phi(x, y, z)*180/3.14159;
-    if (p<0) {p+=360;}// to bring it to [0,360] range
+    t_acc = theta(x, y, z)*180/3.14159;
+    p_acc = phi(x, y, z)*180/3.14159;
+    if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
 
     Serial.print(x);
     Serial.print("\t");
@@ -288,9 +313,9 @@ public:
     Serial.print("\t");
     Serial.print(z);
     Serial.print("\t-1\t1\t");
-    Serial.print(t);
+    Serial.print(t_acc);
     Serial.print("\t");
-    Serial.print(p);
+    Serial.print(p_acc);
     Serial.print("\t-360\t360\t");
     Serial.println();
 
@@ -337,34 +362,7 @@ public:
 
 }; // end class
 
-void set_qbead_color_ble(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
-  bead.c =  (data[2] << 16) | (data[1] << 8) | data[0];
-}
-
-void set_qbead_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
-  // ToDo check all this nasty casting
-          Serial.println("callback!");
-
-  bead.t = data[0]*180/255;
-  bead.p = data[1]*360/255;
-  Serial.println(bead.t);
-  Serial.println(bead.p);
-
-  // memcpy(&t, &(data), 1);
-  // memcpy(&p, &(data+1), 1);
-}
-
-void connect_callback(uint16_t conn_handle)
-{
-  // Get the reference to current connection
-  BLEConnection* connection = Bluefruit.Connection(conn_handle);
-
-  char central_name[32] = { 0 };
-  connection->getPeerName(central_name, sizeof(central_name));
-
-  Serial.print("Connected to "); // TODO take care of cases where Serial is not available
-  Serial.println(central_name);
-}
+Qbead *Qbead::singletoninstance = nullptr;
 
 } // end namespace
 
