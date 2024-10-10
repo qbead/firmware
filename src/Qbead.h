@@ -1,9 +1,13 @@
-#include "Adafruit_NeoPixel.h"  // from the Adafruit NeoPixel package
-#include "LSM6DS3.h"            // from the SEEED LSM6DS package
-#include "Wire.h"               // arduino stdlib
-#include "math.h"               // stdlib
+#ifndef QBEAD_H
+#define QBEAD_H
 
-#include <bluefruit.h>          // from board setup
+
+#include <Arduino.h>
+#include <Adafruit_NeoPixel.h>
+#include <LSM6DS3.h>
+#include <math.h>
+
+#include <bluefruit.h>
 
 // default configs
 #define QB_LEDPIN 0
@@ -37,26 +41,23 @@ static uint32_t color(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 static uint8_t redch(uint32_t rgb) {
-  return rgb>>16;
+  return rgb >> 16;
 }
 
 static uint8_t greench(uint32_t rgb) {
-  return (0x00ff00 & rgb)>>8;
+  return (0x00ff00 & rgb) >> 8;
 }
 
 static uint8_t bluech(uint32_t rgb) {
   return 0x0000ff & rgb;
 }
 
-// TODO predefined color constants
-
-// TODO bring in more of the helpers from SpinWearables https://spinwearables.com/codedoc/src/SpinWearables.h.html
 uint32_t colorWheel(uint8_t wheelPos) {
   wheelPos = 255 - wheelPos;
-  if(wheelPos < 85) {
+  if (wheelPos < 85) {
     return color(255 - wheelPos * 3, 0, wheelPos * 3);
   }
-  if(wheelPos < 170) {
+  if (wheelPos < 170) {
     wheelPos -= 85;
     return color(0, wheelPos * 3, 255 - wheelPos * 3);
   }
@@ -65,7 +66,7 @@ uint32_t colorWheel(uint8_t wheelPos) {
 }
 
 uint32_t colorWheel_deg(float wheelPos) {
-  return colorWheel(wheelPos*255/360);
+  return colorWheel(wheelPos * 255 / 360);
 }
 
 float sign(float x) {
@@ -77,17 +78,16 @@ float sign(float x) {
 // x = cos(p)sin(t)
 // y = sin(p)sin(t)
 float phi(float x, float y, float z) {
-  float ll = x*x+y*y+z*z;
-  float l = sqrt(l);
-  float phi = atan2(y,x);
-  float theta = acos(z/l);
+  float ll = x * x + y * y + z * z;
+  float l = sqrt(ll);
+  float phi = atan2(y, x);
   return phi;
 }
+
 float theta(float x, float y, float z) {
-  float ll = x*x+y*y+z*z;
+  float ll = x * x + y * y + z * z;
   float l = sqrt(ll);
-  float phi = atan2(y,x);
-  float theta = acos(z/l);
+  float theta = acos(z / l);
   return theta;
 }
 
@@ -95,33 +95,30 @@ namespace Qbead {
 
 class Qbead {
 public:
-
   Qbead(const uint16_t pin00 = QB_LEDPIN,
         const uint16_t pixelconfig = QB_PIXELCONFIG,
         const uint16_t nsections = QB_NSECTIONS,
         const uint16_t nlegs = QB_NLEGS,
-        const uint8_t  imu_addr = QB_IMU_ADDR,
-        const uint8_t  ix = QB_IX,
-        const uint8_t  iy = QB_IY,
-        const uint8_t  iz = QB_IZ,
-        const bool  sx = QB_SX,
-        const bool  sy = QB_SY,
-        const bool  sz = QB_SZ
-        ) :
-      imu(LSM6DS3(I2C_MODE,imu_addr)),
-      pixels(Adafruit_NeoPixel(nlegs * (nsections - 1) + 2, pin00, pixelconfig)),
-      nsections(nsections),
-      nlegs(nlegs),
-      theta_quant(180 / nsections),
-      phi_quant(360 / nlegs),
-      ix(ix), iy(iy), iz(iz),
-      sx(sx), sy(sy), sz(sz),
-      bleservice(QB_UUID_SERVICE),
-      blecharcol(QB_UUID_COL_CHAR),
-      blecharsph(QB_UUID_SPH_CHAR),
-      blecharacc(QB_UUID_ACC_CHAR)
-      { 
-  };
+        const uint8_t imu_addr = QB_IMU_ADDR,
+        const uint8_t ix = QB_IX,
+        const uint8_t iy = QB_IY,
+        const uint8_t iz = QB_IZ,
+        const bool sx = QB_SX,
+        const bool sy = QB_SY,
+        const bool sz = QB_SZ)
+      : imu(LSM6DS3(I2C_MODE, imu_addr)),
+        pixels(Adafruit_NeoPixel(nlegs * (nsections - 1) + 2, pin00, pixelconfig)),
+        nsections(nsections),
+        nlegs(nlegs),
+        theta_quant(180 / nsections),
+        phi_quant(360 / nlegs),
+        ix(ix), iy(iy), iz(iz),
+        sx(sx), sy(sy), sz(sz),
+        bleservice(QB_UUID_SERVICE),
+        blecharcol(QB_UUID_COL_CHAR),
+        blecharsph(QB_UUID_SPH_CHAR),
+        blecharacc(QB_UUID_ACC_CHAR)
+        {}
 
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
@@ -139,23 +136,23 @@ public:
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
   float rbuffer[3];
-  float x,y,z,rx,ry,rz; // filtered and raw acc, in units of g
-  float t,p; // theta and phi according to gravity
-  float t_imu; // last update from the IMU
+  float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
+  float t, p;                // theta and phi according to gravity
+  float t_imu;               // last update from the IMU
 
   void begin() {
     Serial.begin(9600);
-    while (!Serial);
-    
+    while (!Serial); // TODO some form of warning or a way to give up if Serial never becomes available
+
     pixels.begin();
     clear();
     setBrightness(10);
-    
+
     Serial.println("qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
     if (!imu.begin()) {
-        Serial.println("IMU error");
+      Serial.println("IMU error");
     } else {
-        Serial.println("IMU OK");
+      Serial.println("IMU OK");
     }
 
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
@@ -191,7 +188,7 @@ public:
   }
 
   void setLegPixelColor(int leg, int pixel, uint32_t color) {
-    leg = nlegs-leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system // TODO make this easier to configure
+    leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
     leg = leg % nlegs;
     if (leg == 0) {
       pixels.setPixelColor(pixel, color);
@@ -203,7 +200,7 @@ public:
       pixels.setPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1, color);
     }
   }
-  
+
   void setBrightness(uint8_t b) {
     pixels.setBrightness(b);
   }
@@ -220,7 +217,7 @@ public:
     } else {
       float phi_leg = phi / phi_quant;
       int theta_int = theta_section + 0.5;
-      theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int;  // to avoid precission issues near the end of the range
+      theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
       int phi_int = phi_leg + 0.5;
       phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
       setLegPixelColor(phi_int, theta_int, color);
@@ -234,7 +231,7 @@ public:
     float theta_section = theta / theta_quant;
     float phi_leg = phi / phi_quant;
     int theta_int = theta_section + 0.5;
-    theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int;  // to avoid precission issues near the end of the range
+    theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
     int phi_int = phi_leg + 0.5;
     phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
 
@@ -260,7 +257,7 @@ public:
     rx = (1-2*sx)*rbuffer[ix];
     ry = (1-2*sy)*rbuffer[iy];
     rz = (1-2*sz)*rbuffer[iz];
-    
+
     float t_new = micros();
     float delta = t_new - t_imu;
     t_imu = t_new;
@@ -317,56 +314,25 @@ public:
     // Secondary Scan Response packet (optional)
     // Since there is no room for 'Name' in Advertising packet
     Bluefruit.ScanResponse.addName();
-    
+
     /* Start Advertising
     * - Enable auto advertising if disconnected
     * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
     * - Timeout for fast mode is 30 seconds
     * - Start(timeout) with timeout = 0 will advertise forever (until connected)
-    * 
+    *
     * For recommended advertising interval
-    * https://developer.apple.com/library/content/qa/qa1931/_index.html   
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html
     */
     Bluefruit.Advertising.restartOnDisconnect(true);
     Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
     Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
-    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
+    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
   }
 
 }; // end class
+
+
 } // end namespace
 
-Qbead::Qbead bead;
-
-// You can use bead.strip to access the LED strip object
-// You can use bead.imu to access the IMU object
-
-void setup() {
-  Serial.println("start");
-  bead.begin();
-  Serial.println("1");
-  bead.setBrightness(25); // way too bright
-  for (int i = 0; i < bead.pixels.numPixels(); i++) {
-    bead.pixels.setPixelColor(i, color(255,255,255));
-    bead.pixels.show();
-    delay(5);
-  }
-  Serial.println("2");
-  for (int phi = 0; phi < 360; phi += 30) {
-    for (int theta = 0; theta < 180; theta+=3) {
-      bead.clear();
-      bead.setBloch_deg(theta, phi, colorWheel(phi));
-      bead.show();
-    }
-  }
-  Serial.println("3");
-}
-
-void loop() {
-  bead.readIMU();
-
-  bead.clear();
-  bead.setBloch_deg_smooth(bead.t, bead.p, color(255,0,255));
-  bead.show();
-  delay(10);
-}
+#endif // QBEAD_H
