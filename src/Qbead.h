@@ -140,6 +140,8 @@ public:
   float t, p;                // theta and phi according to gravity
   float t_imu;               // last update from the IMU
 
+  uint32_t c; // color(255,0,255)
+
   void begin() {
     Serial.begin(9600);
     while (!Serial); // TODO some form of warning or a way to give up if Serial never becomes available
@@ -157,17 +159,20 @@ public:
 
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
     Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
+    Bluefruit.Periph.setConnectCallback(connect_callback);
     bleservice.begin();
     blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharcol.setUserDescriptor("rgb color");
     blecharcol.setFixedLen(3);
+    blecharcol.setWriteCallback(set_qbead_color_ble);
     blecharcol.begin();
     blecharcol.write(zerobuffer20, 3);
     blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharsph.setUserDescriptor("spherical coordinates");
     blecharsph.setFixedLen(2);
+    blecharsph.setWriteCallback(set_qbead_theta_phi);
     blecharsph.begin();
     blecharsph.write(zerobuffer20, 2);
     blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
@@ -332,6 +337,34 @@ public:
 
 }; // end class
 
+void set_qbead_color_ble(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
+  bead.c =  (data[2] << 16) | (data[1] << 8) | data[0];
+}
+
+void set_qbead_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
+  // ToDo check all this nasty casting
+          Serial.println("callback!");
+
+  bead.t = data[0]*180/255;
+  bead.p = data[1]*360/255;
+  Serial.println(bead.t);
+  Serial.println(bead.p);
+
+  // memcpy(&t, &(data), 1);
+  // memcpy(&p, &(data+1), 1);
+}
+
+void connect_callback(uint16_t conn_handle)
+{
+  // Get the reference to current connection
+  BLEConnection* connection = Bluefruit.Connection(conn_handle);
+
+  char central_name[32] = { 0 };
+  connection->getPeerName(central_name, sizeof(central_name));
+
+  Serial.print("Connected to "); // TODO take care of cases where Serial is not available
+  Serial.println(central_name);
+}
 
 } // end namespace
 
