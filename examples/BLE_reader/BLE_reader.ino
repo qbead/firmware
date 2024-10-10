@@ -19,12 +19,11 @@ void setup() {
       bead.show();
     }
   }
-  Serial.println("starting inertial tracking");
+  Serial.println("starting BLE tracking");
 }
 
 void loop() {
-  bead.readIMU();
   bead.clear();
-  bead.setBloch_deg_smooth(bead.t_acc, bead.p_acc, color(255, 0, 255));
+  bead.setBloch_deg_smooth(bead.t_ble, bead.p_ble, bead.c_ble);
   bead.show();
 }
