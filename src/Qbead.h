@@ -72,6 +72,17 @@ float sign(float x) {
   else return -1;
 }
 
+void connect_callback(uint16_t conn_handle){
+  // Get the reference to current connection
+  BLEConnection* connection = Bluefruit.Connection(conn_handle);
+
+  char central_name[32] = { 0 };
+  connection->getPeerName(central_name, sizeof(central_name));
+
+  Serial.print("Connected to "); // TODO take care of cases where Serial is not available
+  Serial.println(central_name);
+}
+
 // State Class Definition
 class State {
 private:
@@ -103,7 +114,6 @@ public:
     float getPhi() const;
 
     void printState();
-    void Xgate();
 };
 
 State::State() : x(0), y(0), z(1) {
@@ -200,11 +210,6 @@ void State::printState() {
     Serial.print(", phi = "); Serial.println(phi);
 }
 
-void State::Xgate() {
-    theta = fmod(theta + 180.0, 360.0);
-    sphericalToCartesian();
-}
-
 namespace Qbead {
 
 class Qbead {
@@ -238,6 +243,7 @@ public:
 
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
+
   BLEService bleservice;
   BLECharacteristic blecharcol;
   BLECharacteristic blecharsph;
@@ -256,8 +262,10 @@ public:
 
   State state;
 
+  uint32_t c_ble; // color
+
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-      singletoninstance->state.setXYZ((data[0] / 255.0) * 2 - 1, (data[1] / 255.0) * 2 - 1, (data[2] / 255.0) * 2 - 1);
+      singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
   }
 
   static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
@@ -277,10 +285,12 @@ public:
     state.setXYZ(0, 0, 1);  // Ensure the state starts pointing along the z-axis
 
     Serial.println("qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
-    if (!imu.begin()) {
-      Serial.println("IMU error");
+    uint16_t imuResult = imu.begin();
+    if (imuResult != 0) {
+        Serial.print("IMU error: ");
+        Serial.println(imuResult);
     } else {
-      Serial.println("IMU OK");
+        Serial.println("IMU OK");
     }
 
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
