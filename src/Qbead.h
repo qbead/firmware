@@ -72,6 +72,23 @@ float sign(float x) {
   else return -1;
 }
 
+// z = cos(t)
+// x = cos(p)sin(t)
+// y = sin(p)sin(t)
+float phi(float x, float y, float z) {
+  float ll = x * x + y * y + z * z;
+  float l = sqrt(ll);
+  float phi = atan2(y, x);
+  return phi;
+}
+
+float theta(float x, float y, float z) {
+  float ll = x * x + y * y + z * z;
+  float l = sqrt(ll);
+  float theta = acos(z / l);
+  return theta;
+}
+
 void connect_callback(uint16_t conn_handle){
   // Get the reference to current connection
   BLEConnection* connection = Bluefruit.Connection(conn_handle);
@@ -89,126 +106,104 @@ private:
     float x, y, z;    // Cartesian coordinates
     float theta, phi; // Spherical coordinates
 
-    void cartesianToSpherical();
-    void sphericalToCartesian();
+    void cartesianToSpherical() {
+        float l = sqrt(x * x + y * y + z * z);
+        if (l == 0) l = 1;
+        theta = acos(z / l) * 180 / PI;
+        phi = atan2(y, x) * 180 / PI;
+        if (phi < 0) phi += 360;
+    }
+
+    void sphericalToCartesian() {
+        float r = 1;
+        x = r * sin(theta * PI / 180.0) * cos(phi * PI / 180.0);
+        y = r * sin(theta * PI / 180.0) * sin(phi * PI / 180.0);
+        z = r * cos(theta * PI / 180.0);
+    }
 
 public:
-    State();
-    State(float x_init, float y_init, float z_init);
-    State(float theta_init, float phi_init);
+    // Constructors
+    State() : x(0), y(0), z(1) {
+        cartesianToSpherical();
+    }
 
-    void setX(float new_x);
-    void setY(float new_y);
-    void setZ(float new_z);
-    void setXYZ(float new_x, float new_y, float new_z);
+    State(float x_init, float y_init, float z_init) : x(x_init), y(y_init), z(z_init) {
+        cartesianToSpherical();
+    }
 
-    void setTheta(float new_theta);
-    void setPhi(float new_phi);
-    void setThetaPhi(float new_theta, float new_phi);
+    State(float theta_init, float phi_init) : theta(theta_init), phi(phi_init) {
+        sphericalToCartesian();
+    }
 
-    float getX() const;
-    float getY() const;
-    float getZ() const;
+    // Setters and getters
+    void setX(float new_x) {
+        x = new_x;
+        cartesianToSpherical();
+    }
 
-    float getTheta() const;
-    float getPhi() const;
+    void setY(float new_y) {
+        y = new_y;
+        cartesianToSpherical();
+    }
 
-    void printState();
+    void setZ(float new_z) {
+        z = new_z;
+        cartesianToSpherical();
+    }
+
+    void setXYZ(float new_x, float new_y, float new_z) {
+        x = new_x;
+        y = new_y;
+        z = new_z;
+        cartesianToSpherical();
+    }
+
+    void setTheta(float new_theta) {
+        theta = new_theta;
+        sphericalToCartesian();
+    }
+
+    void setPhi(float new_phi) {
+        phi = new_phi;
+        sphericalToCartesian();
+    }
+
+    void setThetaPhi(float new_theta, float new_phi) {
+        theta = new_theta;
+        phi = new_phi;
+        sphericalToCartesian();
+    }
+
+    float getX() const {
+        return x;
+    }
+
+    float getY() const {
+        return y;
+    }
+
+    float getZ() const {
+        return z;
+    }
+
+    float getTheta() const {
+        return theta;
+    }
+
+    float getPhi() const {
+        return phi;
+    }
+
+    // Method to print the state
+    void printState() {
+        Serial.print("Cartesian: x = "); Serial.print(x);
+        Serial.print(", y = "); Serial.print(y);
+        Serial.print(", z = "); Serial.println(z);
+
+        Serial.print("Spherical: theta = "); Serial.print(theta);
+        Serial.print(", phi = "); Serial.println(phi);
+    }
 };
-
-State::State() : x(0), y(0), z(1) {
-    cartesianToSpherical();
-}
-
-State::State(float x_init, float y_init, float z_init) : x(x_init), y(y_init), z(z_init) {
-    cartesianToSpherical();
-}
-
-State::State(float theta_init, float phi_init) : theta(theta_init), phi(phi_init) {
-    sphericalToCartesian();
-}
-
-void State::cartesianToSpherical() {
-    float l = sqrt(x * x + y * y + z * z);
-    if (l == 0) l = 1;
-    theta = acos(z / l) * 180 / PI;
-    phi = atan2(y, x) * 180 / PI;
-    if (phi < 0) phi += 360;
-}
-
-void State::sphericalToCartesian() {
-    float r = 1;
-    x = r * sin(theta * PI / 180.0) * cos(phi * PI / 180.0);
-    y = r * sin(theta * PI / 180.0) * sin(phi * PI / 180.0);
-    z = r * cos(theta * PI / 180.0);
-}
-
-void State::setX(float new_x) {
-    x = new_x;
-    cartesianToSpherical();
-}
-
-void State::setY(float new_y) {
-    y = new_y;
-    cartesianToSpherical();
-}
-
-void State::setZ(float new_z) {
-    z = new_z;
-    cartesianToSpherical();
-}
-
-void State::setXYZ(float new_x, float new_y, float new_z) {
-    x = new_x;
-    y = new_y;
-    z = new_z;
-    cartesianToSpherical();
-}
-
-void State::setTheta(float new_theta) {
-    theta = new_theta;
-    sphericalToCartesian();
-}
-
-void State::setPhi(float new_phi) {
-    phi = new_phi;
-    sphericalToCartesian();
-}
-
-void State::setThetaPhi(float new_theta, float new_phi) {
-    theta = new_theta;
-    phi = new_phi;
-    sphericalToCartesian();
-}
-
-float State::getX() const {
-    return x;
-}
-
-float State::getY() const {
-    return y;
-}
-
-float State::getZ() const {
-    return z;
-}
-
-float State::getTheta() const {
-    return theta;
-}
-
-float State::getPhi() const {
-    return phi;
-}
-
-void State::printState() {
-    Serial.print("Cartesian: x = "); Serial.print(x);
-    Serial.print(", y = "); Serial.print(y);
-    Serial.print(", z = "); Serial.println(z);
-
-    Serial.print("Spherical: theta = "); Serial.print(theta);
-    Serial.print(", phi = "); Serial.println(phi);
-}
 
 namespace Qbead {
 
@@ -257,8 +252,11 @@ public:
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
   float rbuffer[3];
-  float rx, ry, rz;         // filtered and raw acc, in units of g
-  float T_imu;             // last update from the IMU
+  float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
+  float t_acc, p_acc;        // theta and phi according to gravity
+  float T_imu;               // last update from the IMU
+
+  float t_ble, p_ble;       // BLE theta and phi
 
   State state;
 
@@ -268,9 +266,9 @@ public:
       singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
   }
 
-  static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-      singletoninstance->state.setTheta(data[0] * 180 / 255);
-      singletoninstance->state.setPhi(data[1] * 360 / 255);
+  static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
+      singletoninstance->t_ble = data[0]*180/255;
+      singletoninstance->p_ble = data[1]*360/255;
   }
 
   void begin() {
@@ -346,43 +344,6 @@ public:
     pixels.setBrightness(b);
   }
 
-  void readIMU() {
-    rbuffer[0] = imu.readFloatAccelX();
-    rbuffer[1] = imu.readFloatAccelY();
-    rbuffer[2] = imu.readFloatAccelZ();
-    rx = (1 - 2 * sx) * rbuffer[ix];
-    ry = (1 - 2 * sy) * rbuffer[iy];
-    rz = (1 - 2 * sz) * rbuffer[iz];
-
-    float T_new = micros();
-    float delta = T_new - T_imu;
-    T_imu = T_new;
-    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
-    if (delta > 100000) {
-        state.setXYZ(rx, ry, rz);
-    } else {
-        float d = delta / T;
-        float newX = d * rx + (1 - d) * state.getX();
-        float newY = d * ry + (1 - d) * state.getY();
-        float newZ = d * rz + (1 - d) * state.getZ();
-        state.setXYZ(newX, newY, newZ);
-    }
-
-    state.printState();
-
-    rbuffer[0] = state.getX();
-    rbuffer[1] = state.getY();
-    rbuffer[2] = state.getZ();
-    blecharacc.write(rbuffer, 3*sizeof(float));
-    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
-      {
-        blecharacc.notify(rbuffer, 3*sizeof(float));
-      }
-    }
-  }
-
   void setBloch_deg(float theta, float phi, uint32_t color) {
     if (theta < 0 || theta > 180 || phi < 0 || phi > 360) {
       return;
@@ -397,7 +358,7 @@ public:
       int theta_int = theta_section + 0.5;
       theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
       int phi_int = phi_leg + 0.5;
-      phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+      phi_int = phi_int % nlegs;
       setLegPixelColor(phi_int, theta_int, color);
     }
   }
@@ -426,6 +387,58 @@ public:
 
     setLegPixelColor(phi_int, theta_int, color(q * rc, q * gc, q * bc));
     setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * gc, p * bc));
+  }
+
+  void readIMU() {
+    rbuffer[0] = imu.readFloatAccelX();
+    rbuffer[1] = imu.readFloatAccelY();
+    rbuffer[2] = imu.readFloatAccelZ();
+    rx = (1-2*sx)*rbuffer[ix];
+    ry = (1-2*sy)*rbuffer[iy];
+    rz = (1-2*sz)*rbuffer[iz];
+
+    float T_new = micros();
+    float delta = T_new - T_imu;
+    T_imu = T_new;
+    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
+    if (delta > 100000) {
+      x = rx;
+      y = ry;
+      z = rz;
+    } else {
+      float d = delta/T;
+      x = d*rx+(1-d)*x;
+      y = d*ry+(1-d)*y;
+      z = d*rz+(1-d)*z;
+    }
+
+    t_acc = theta(x, y, z)*180/3.14159;
+    p_acc = phi(x, y, z)*180/3.14159;
+    if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
+
+    Serial.print(x);
+    Serial.print("\t");
+    Serial.print(y);
+    Serial.print("\t");
+    Serial.print(z);
+    Serial.print("\t-1\t1\t");
+    Serial.print(t_acc);
+    Serial.print("\t");
+    Serial.print(p_acc);
+    Serial.print("\t-360\t360\t");
+    Serial.println();
+
+    rbuffer[0] = x;
+    rbuffer[1] = y;
+    rbuffer[2] = z;
+    blecharacc.write(rbuffer, 3*sizeof(float));
+    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    {
+      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
+      {
+        blecharacc.notify(rbuffer, 3*sizeof(float));
+      }
+    }
   }
 
   void startBLEadv(void)

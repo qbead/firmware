@@ -24,6 +24,7 @@ void setup() {
 
 void loop() {
   bead.readIMU();
+  bead.state.setXYZ(bead.x, bead.y, bead.z);
   bead.clear();
   bead.setBloch_deg_smooth(bead.state.getTheta(), bead.state.getPhi(), color(255, 0, 255));
   bead.show();
