@@ -1,12 +1,10 @@
 #ifndef QBEAD_H
 #define QBEAD_H
 
-
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
 #include <math.h>
-
 #include <bluefruit.h>
 
 // default configs
@@ -91,8 +89,7 @@ float theta(float x, float y, float z) {
   return theta;
 }
 
-void connect_callback(uint16_t conn_handle)
-{
+void connect_callback(uint16_t conn_handle){
   // Get the reference to current connection
   BLEConnection* connection = Bluefruit.Connection(conn_handle);
 
@@ -102,6 +99,111 @@ void connect_callback(uint16_t conn_handle)
   Serial.print("Connected to "); // TODO take care of cases where Serial is not available
   Serial.println(central_name);
 }
+
+// State Class Definition
+class State {
+private:
+    float x, y, z;    // Cartesian coordinates
+    float theta, phi; // Spherical coordinates
+
+    void cartesianToSpherical() {
+        float l = sqrt(x * x + y * y + z * z);
+        if (l == 0) l = 1;
+        theta = acos(z / l) * 180 / PI;
+        phi = atan2(y, x) * 180 / PI;
+        if (phi < 0) phi += 360;
+    }
+
+    void sphericalToCartesian() {
+        float r = 1;
+        x = r * sin(theta * PI / 180.0) * cos(phi * PI / 180.0);
+        y = r * sin(theta * PI / 180.0) * sin(phi * PI / 180.0);
+        z = r * cos(theta * PI / 180.0);
+    }
+
+public:
+    // Constructors
+    State() : x(0), y(0), z(1) {
+        cartesianToSpherical();
+    }
+
+    State(float x_init, float y_init, float z_init) : x(x_init), y(y_init), z(z_init) {
+        cartesianToSpherical();
+    }
+
+    State(float theta_init, float phi_init) : theta(theta_init), phi(phi_init) {
+        sphericalToCartesian();
+    }
+
+    // Setters and getters
+    void setX(float new_x) {
+        x = new_x;
+        cartesianToSpherical();
+    }
+
+    void setY(float new_y) {
+        y = new_y;
+        cartesianToSpherical();
+    }
+
+    void setZ(float new_z) {
+        z = new_z;
+        cartesianToSpherical();
+    }
+
+    void setXYZ(float new_x, float new_y, float new_z) {
+        x = new_x;
+        y = new_y;
+        z = new_z;
+        cartesianToSpherical();
+    }
+
+    void setTheta(float new_theta) {
+        theta = new_theta;
+        sphericalToCartesian();
+    }
+
+    void setPhi(float new_phi) {
+        phi = new_phi;
+        sphericalToCartesian();
+    }
+
+    void setThetaPhi(float new_theta, float new_phi) {
+        theta = new_theta;
+        phi = new_phi;
+        sphericalToCartesian();
+    }
+
+    float getX() const {
+        return x;
+    }
+
+    float getY() const {
+        return y;
+    }
+
+    float getZ() const {
+        return z;
+    }
+
+    float getTheta() const {
+        return theta;
+    }
+
+    float getPhi() const {
+        return phi;
+    }
+
+    // Method to print the state
+    void printState() {
+        Serial.print("Cartesian: x = "); Serial.print(x);
+        Serial.print(", y = "); Serial.print(y);
+        Serial.print(", z = "); Serial.println(z);
+
+        Serial.print("Spherical: theta = "); Serial.print(theta);
+        Serial.print(", phi = "); Serial.println(phi);
+    }
+};
 
 namespace Qbead {
 
@@ -152,9 +254,12 @@ public:
   float rbuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float t_acc, p_acc;        // theta and phi according to gravity
-  float T_imu;             // last update from the IMU
+  float T_imu;               // last update from the IMU
 
-  float t_ble, p_ble; // theta and phi
+  float t_ble, p_ble;       // BLE theta and phi
+
+  State state;
+
   uint32_t c_ble; // color
 
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
@@ -175,11 +280,15 @@ public:
     clear();
     setBrightness(10);
 
+    state.setXYZ(0, 0, 1);  // Ensure the state starts pointing along the z-axis
+
     Serial.println("qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
-    if (!imu.begin()) {
-      Serial.println("IMU error");
+    uint16_t imuResult = imu.begin();
+    if (imuResult != 0) {
+        Serial.print("IMU error: ");
+        Serial.println(imuResult);
     } else {
-      Serial.println("IMU OK");
+        Serial.println("IMU OK");
     }
 
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
@@ -203,9 +312,9 @@ public:
     blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
     blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharacc.setUserDescriptor("xyz acceleration");
-    blecharacc.setFixedLen(3*sizeof(float));
+    blecharacc.setFixedLen(3 * sizeof(float));
     blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3*sizeof(float));
+    blecharacc.write(zerobuffer20, 3 * sizeof(float));
     startBLEadv();
   }
 
@@ -221,13 +330,13 @@ public:
     leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
     leg = leg % nlegs;
     if (leg == 0) {
-      pixels.setPixelColor(pixel, color);
+        pixels.setPixelColor(pixel, color);
     } else if (pixel == 0) {
-      pixels.setPixelColor(0, color);
+        pixels.setPixelColor(0, color);
     } else if (pixel == 6) {
-      pixels.setPixelColor(6, color);
+        pixels.setPixelColor(6, color);
     } else {
-      pixels.setPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1, color);
+        pixels.setPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1, color);
     }
   }
 
@@ -239,17 +348,17 @@ public:
     if (theta < 0 || theta > 180 || phi < 0 || phi > 360) {
       return;
     }
-    float theta_section = theta / theta_quant;
+    float theta_section = state.getTheta() / theta_quant;
     if (theta_section < 0.5) {
       setLegPixelColor(0, 0, color);
     } else if (theta_section > nsections - 0.5) {
       setLegPixelColor(0, nsections, color);
     } else {
-      float phi_leg = phi / phi_quant;
+      float phi_leg = state.getPhi() / phi_quant;
       int theta_int = theta_section + 0.5;
       theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
       int phi_int = phi_leg + 0.5;
-      phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+      phi_int = phi_int % nlegs;
       setLegPixelColor(phi_int, theta_int, color);
     }
   }
@@ -261,9 +370,9 @@ public:
     float theta_section = theta / theta_quant;
     float phi_leg = phi / phi_quant;
     int theta_int = theta_section + 0.5;
-    theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
+    theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int;  // to avoid precision issues near the end of the range
     int phi_int = phi_leg + 0.5;
-    phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+    phi_int = phi_int % nlegs;
 
     float p = (theta_section - theta_int);
     int theta_direction = sign(p);
@@ -273,11 +382,11 @@ public:
     q = q * q;
 
     uint8_t rc = redch(c);
-    uint8_t bc = bluech(c);
     uint8_t gc = greench(c);
+    uint8_t bc = bluech(c);
 
-    setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
-    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
+    setLegPixelColor(phi_int, theta_int, color(q * rc, q * gc, q * bc));
+    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * gc, p * bc));
   }
 
   void readIMU() {
