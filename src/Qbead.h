@@ -1,6 +1,8 @@
 #ifndef QBEAD_H
 #define QBEAD_H
 
+// AAAAAAAAAA
+
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
@@ -89,16 +91,16 @@ float theta(float x, float y, float z) {
   return theta;
 }
 
-void connect_callback(uint16_t conn_handle){
-  // Get the reference to current connection
-  BLEConnection* connection = Bluefruit.Connection(conn_handle);
+// void connect_callback(uint16_t conn_handle){
+//   // Get the reference to current connection
+//   BLEConnection* connection = Bluefruit.Connection(conn_handle);
 
-  char central_name[32] = { 0 };
-  connection->getPeerName(central_name, sizeof(central_name));
+//   char central_name[32] = { 0 };
+//   connection->getPeerName(central_name, sizeof(central_name));
 
-  Serial.print("Connected to "); // TODO take care of cases where Serial is not available
-  Serial.println(central_name);
-}
+//   Serial.print("Connected to "); // TODO take care of cases where Serial is not available
+//   Serial.println(central_name);
+// }
 
 // State Class Definition
 class State {
@@ -228,10 +230,10 @@ public:
         phi_quant(360 / nlegs),
         ix(ix), iy(iy), iz(iz),
         sx(sx), sy(sy), sz(sz),
-        bleservice(QB_UUID_SERVICE),
-        blecharcol(QB_UUID_COL_CHAR),
-        blecharsph(QB_UUID_SPH_CHAR),
-        blecharacc(QB_UUID_ACC_CHAR)
+        // bleservice(QB_UUID_SERVICE),
+        // blecharcol(QB_UUID_COL_CHAR),
+        // blecharsph(QB_UUID_SPH_CHAR),
+        // blecharacc(QB_UUID_ACC_CHAR)
         {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
@@ -239,11 +241,11 @@ public:
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
-  BLEService bleservice;
-  BLECharacteristic blecharcol;
-  BLECharacteristic blecharsph;
-  BLECharacteristic blecharacc;
-  uint8_t connection_count = 0;
+  // BLEService bleservice;
+  // BLECharacteristic blecharcol;
+  // BLECharacteristic blecharsph;
+  // BLECharacteristic blecharacc;
+  // uint8_t connection_count = 0;
 
   const uint8_t nsections;
   const uint8_t nlegs;
@@ -262,14 +264,14 @@ public:
 
   uint32_t c_ble; // color
 
-  static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-      singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
-  }
+  // static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
+  //     singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
+  // }
 
-  static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
-      singletoninstance->t_ble = data[0]*180/255;
-      singletoninstance->p_ble = data[1]*360/255;
-  }
+  // static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
+  //     singletoninstance->t_ble = data[0]*180/255;
+  //     singletoninstance->p_ble = data[1]*360/255;
+  // }
 
   void begin() {
     singletoninstance = this;
@@ -291,31 +293,31 @@ public:
         Serial.println("IMU OK");
     }
 
-    Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
-    Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
-    Bluefruit.Periph.setConnectCallback(connect_callback);
-    bleservice.begin();
-    blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharcol.setUserDescriptor("rgb color");
-    blecharcol.setFixedLen(3);
-    blecharcol.setWriteCallback(ble_callback_color);
-    blecharcol.begin();
-    blecharcol.write(zerobuffer20, 3);
-    blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharsph.setUserDescriptor("spherical coordinates");
-    blecharsph.setFixedLen(2);
-    blecharsph.setWriteCallback(ble_callback_theta_phi);
-    blecharsph.begin();
-    blecharsph.write(zerobuffer20, 2);
-    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharacc.setUserDescriptor("xyz acceleration");
-    blecharacc.setFixedLen(3 * sizeof(float));
-    blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3 * sizeof(float));
-    startBLEadv();
+    // Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
+    // Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
+    // Bluefruit.Periph.setConnectCallback(connect_callback);
+    // bleservice.begin();
+    // blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    // blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    // blecharcol.setUserDescriptor("rgb color");
+    // blecharcol.setFixedLen(3);
+    // blecharcol.setWriteCallback(ble_callback_color);
+    // blecharcol.begin();
+    // blecharcol.write(zerobuffer20, 3);
+    // blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    // blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    // blecharsph.setUserDescriptor("spherical coordinates");
+    // blecharsph.setFixedLen(2);
+    // blecharsph.setWriteCallback(ble_callback_theta_phi);
+    // blecharsph.begin();
+    // blecharsph.write(zerobuffer20, 2);
+    // blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    // blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    // blecharacc.setUserDescriptor("xyz acceleration");
+    // blecharacc.setFixedLen(3 * sizeof(float));
+    // blecharacc.begin();
+    // blecharacc.write(zerobuffer20, 3 * sizeof(float));
+    // startBLEadv();
   }
 
   void clear() {
@@ -431,43 +433,43 @@ public:
     rbuffer[0] = x;
     rbuffer[1] = y;
     rbuffer[2] = z;
-    blecharacc.write(rbuffer, 3*sizeof(float));
-    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
-      {
-        blecharacc.notify(rbuffer, 3*sizeof(float));
-      }
-    }
+    // blecharacc.write(rbuffer, 3*sizeof(float));
+    // for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    // {
+    //   if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
+    //   {
+    //     blecharacc.notify(rbuffer, 3*sizeof(float));
+    //   }
+    // }
   }
 
-  void startBLEadv(void)
-  {
-    // Advertising packet
-    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-    Bluefruit.Advertising.addTxPower();
+  // void startBLEadv(void)
+  // {
+  //   // Advertising packet
+  //   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+  //   Bluefruit.Advertising.addTxPower();
 
-    // Include HRM Service UUID
-    Bluefruit.Advertising.addService(bleservice);
+  //   // Include HRM Service UUID
+  //   Bluefruit.Advertising.addService(bleservice);
 
-    // Secondary Scan Response packet (optional)
-    // Since there is no room for 'Name' in Advertising packet
-    Bluefruit.ScanResponse.addName();
+  //   // Secondary Scan Response packet (optional)
+  //   // Since there is no room for 'Name' in Advertising packet
+  //   Bluefruit.ScanResponse.addName();
 
-    /* Start Advertising
-    * - Enable auto advertising if disconnected
-    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
-    * - Timeout for fast mode is 30 seconds
-    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
-    *
-    * For recommended advertising interval
-    * https://developer.apple.com/library/content/qa/qa1931/_index.html
-    */
-    Bluefruit.Advertising.restartOnDisconnect(true);
-    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
-    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
-  }
+  //   /* Start Advertising
+  //   * - Enable auto advertising if disconnected
+  //   * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+  //   * - Timeout for fast mode is 30 seconds
+  //   * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+  //   *
+  //   * For recommended advertising interval
+  //   * https://developer.apple.com/library/content/qa/qa1931/_index.html
+  //   */
+  //   Bluefruit.Advertising.restartOnDisconnect(true);
+  //   Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+  //   Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+  //   Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
+  // }
 
 }; // end class
 
