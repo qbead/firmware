@@ -1,8 +1,6 @@
 #ifndef QBEAD_H
 #define QBEAD_H
 
-// AAAAAAAAAA
-
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
@@ -32,6 +30,15 @@ const uint8_t QB_UUID_SPH_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
 const uint8_t QB_UUID_ACC_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_SERVICE_1[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_ENTG_1[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_SERVICE_2[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+1,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_ENTG_2[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
+
 
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
@@ -230,6 +237,10 @@ public:
         phi_quant(360 / nlegs),
         ix(ix), iy(iy), iz(iz),
         sx(sx), sy(sy), sz(sz),
+        bleservice_1(QB_UUID_SERVICE_1),
+        blechentg_1(QB_UUID_ENTG_1),
+        bleservice_2(QB_UUID_SERVICE_2),
+        blechentg_2(QB_UUID_ENTG_2)
         // bleservice(QB_UUID_SERVICE),
         // blecharcol(QB_UUID_COL_CHAR),
         // blecharsph(QB_UUID_SPH_CHAR),
@@ -241,6 +252,10 @@ public:
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
+  BLEService bleservice_1;
+  BLECharacteristic blechentg_1;
+  BLEService bleservice_2;
+  BLECharacteristic blechentg_2;
   // BLEService bleservice;
   // BLECharacteristic blecharcol;
   // BLECharacteristic blecharsph;
@@ -273,7 +288,93 @@ public:
   //     singletoninstance->p_ble = data[1]*360/255;
   // }
 
-  void begin() {
+  static void writeCallback_1(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
+    if(data[0]==0){
+      Serial.println("The Qbead collapsed to State down.");
+    }
+    else if(data[0]==1){
+      Serial.println("The Qbead collapsed to State up.");
+    }
+  }
+
+  static void writeCallback_2(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
+    if(data[0]==1){
+      Serial.println("The Qbead collapsed to State down.");
+    }
+    else if(data[0]==0){
+      Serial.println("The Qbead collapsed to State up.");
+    }
+  }
+
+  void startBLEadv_1(void)
+  {
+    // Advertising packet
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    Bluefruit.Advertising.addTxPower();
+
+    // Include HRM Service UUID
+    Bluefruit.Advertising.addService(bleservice_1);
+
+    // Secondary Scan Response packet (optional)
+    // Since there is no room for 'Name' in Advertising packet
+    Bluefruit.ScanResponse.addName();
+    
+    /* Start Advertising
+    * - Enable auto advertising if disconnected
+    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+    * - Timeout for fast mode is 30 seconds
+    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+    * 
+    * For recommended advertising interval
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html   
+    */
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
+  }
+
+  void startBLEadv_2(void)
+  {
+    // Advertising packet
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    Bluefruit.Advertising.addTxPower();
+
+    // Include HRM Service UUID
+    Bluefruit.Advertising.addService(bleservice_2);
+
+    // Secondary Scan Response packet (optional)
+    // Since there is no room for 'Name' in Advertising packet
+    Bluefruit.ScanResponse.addName();
+    
+    /* Start Advertising
+    * - Enable auto advertising if disconnected
+    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+    * - Timeout for fast mode is 30 seconds
+    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+    * 
+    * For recommended advertising interval
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html   
+    */
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
+  }
+
+  static void connect_callback(uint16_t conn_handle)
+  {
+    // Get the reference to current connection
+    BLEConnection* connection = Bluefruit.Connection(conn_handle);
+
+    char central_name[32] = { 0 };
+    connection->getPeerName(central_name, sizeof(central_name));
+
+    Serial.print("Connected to ");
+    Serial.println(central_name);
+  }
+
+  void begin(int entg) {
     singletoninstance = this;
     Serial.begin(9600);
     while (!Serial); // TODO some form of warning or a way to give up if Serial never becomes available
@@ -293,9 +394,9 @@ public:
         Serial.println("IMU OK");
     }
 
-    // Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
-    // Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
-    // Bluefruit.Periph.setConnectCallback(connect_callback);
+    Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
+    Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
+    Bluefruit.Periph.setConnectCallback(connect_callback);
     // bleservice.begin();
     // blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     // blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
@@ -318,6 +419,49 @@ public:
     // blecharacc.begin();
     // blecharacc.write(zerobuffer20, 3 * sizeof(float));
     // startBLEadv();
+
+    Serial.println(entg);
+
+    if(entg==1){
+      Serial.println("Is this the first or the second device? Write 0 for the first one, 1 for the second.");
+      delay(5000);
+      while (!Serial.available()){}
+      int number= Serial.parseInt();
+      Serial.println(number);
+
+      
+      if(number==0){
+        Bluefruit.setName("QBEAD_1");
+        Serial.println("QBEAD_1");
+        bleservice_1.begin();
+      
+        blechentg_1.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY | CHR_PROPS_WRITE);
+        blechentg_1.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+        blechentg_1.setUserDescriptor("Entanglement");
+        blechentg_1.setFixedLen(3*sizeof(float));
+        blechentg_1.begin();
+        blechentg_1.write(zerobuffer20, 3*sizeof(float));
+        blechentg_1.setWriteCallback(writeCallback_1);
+
+        startBLEadv_1();
+      }
+      else if (number==1){
+        Bluefruit.setName("QBEAD_2");
+        Serial.println("QBEAD_2");
+        bleservice_2.begin();
+      
+        blechentg_2.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY | CHR_PROPS_WRITE);
+        blechentg_2.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+        blechentg_2.setUserDescriptor("Entanglement");
+        blechentg_2.setFixedLen(3*sizeof(float));
+        blechentg_2.begin();
+        blechentg_2.write(zerobuffer20, 3*sizeof(float));
+        blechentg_2.setWriteCallback(writeCallback_2);
+
+        startBLEadv_2();
+      }
+    }
+
   }
 
   void clear() {
@@ -470,6 +614,7 @@ public:
   //   Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
   //   Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
   // }
+
 
 }; // end class
 
