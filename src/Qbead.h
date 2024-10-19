@@ -261,42 +261,6 @@ public:
       Xgate();
       sphericalToCartesian();
   }
-
-  // // Apply RX gate animation 
-  // void RXgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
-  //     for (int i=1; i<=steps; i++){
-  //         RXgate(angle/steps);
-  //         bead.clear();
-  //         //bead.getState().printState(); //for debugging
-  //         bead.setBloch_deg_smooth(bead.state.getTheta(), bead.state.getPhi(), color(255, 0, 255));
-  //         bead.show();
-  //         delay(time_in_ms);
-  //     }
-  // }
-
-  // // Apply RY gate animation 
-  // void RYgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
-  //     for (int i=1; i<=steps; i++){
-  //         RYgate(angle/steps);
-  //         bead.clear();
-  //         //bead.getState().printState(); //for debugging
-  //         bead.setBloch_deg_smooth(bead.state.getTheta(), bead.state.getPhi(), color(255, 0, 255));
-  //         bead.show();
-  //         delay(time_in_ms);
-  //     }
-  // }
-
-  // // Apply RZ gate animation 
-  // void RZgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
-  //     for (int i=1; i<=steps; i++){
-  //         RZgate(angle/steps);
-  //         bead.clear();
-  //         //bead.getState().printState(); //for debugging
-  //         bead.setBloch_deg_smooth(bead.state.getTheta(), bead.state.getPhi(), color(255, 0, 255));
-  //         bead.show();
-  //         delay(time_in_ms);
-  //     }
-  // }
 };
 
 namespace Qbead {
