@@ -1,6 +1,4 @@
-#include <Arduino.h>
 #include <Qbead.h>
-
 
 Qbead::Qbead bead;
 
