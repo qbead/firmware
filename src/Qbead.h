@@ -205,7 +205,7 @@ public:
     }
     
     // Apply X gate 
-  void State::Xgate() {
+  void Xgate() {
       // Flip theta over the x-axis
       theta = fmod(180.0 - theta, 360.0);
       phi =  fmod(360-phi, 360.0);// Ensure theta stays within 0-360 degrees
@@ -213,20 +213,20 @@ public:
   }
 
   // Apply Y gate 
-  void State::Ygate() {
+  void Ygate() {
       theta = fmod(180.0 - theta, 360.0);
       phi = fmod(phi + 180.0, 360.0); // Ensure theta stays within 0-360 degrees
       sphericalToCartesian();
   }
 
   // Apply Z gate 
-  void State::Zgate() {
+  void Zgate() {
       phi = fmod(phi + 180.0, 360.0); // Ensure theta stays within 0-360 degrees
       sphericalToCartesian();
   }
 
   //Apply arbitrary rotation around X axis 
-  void State::RXgate(float angle) {
+  void RXgate(float angle) {
       angle = angle*PI/180.0;
       float y1 = y*cos(angle) - z*sin(angle);
       float z1 = y*sin(angle) + z*cos(angle);
@@ -236,7 +236,7 @@ public:
   }
 
   //Apply arbitrary rotation around Y axis 
-  void State::RYgate(float angle) {
+  void RYgate(float angle) {
       angle = angle*PI/180.0;
       float x1 = x*cos(angle) + z*sin(angle);
       float z1 = z*cos(angle) - x*sin(angle);
@@ -246,7 +246,7 @@ public:
   }
 
   //Apply arbitrary rotation around Z axis 
-  void State::RZgate(float angle) {
+  void RZgate(float angle) {
       angle = angle*PI/180.0;
       float x1 = x*cos(angle) - y*sin(angle);
       float y1 = x*sin(angle) + y*cos(angle);
@@ -256,17 +256,16 @@ public:
   }
 
   // Apply Hadamard gate 
-  void State::Hgate() {
+  void Hgate() {
       RYgate(90);
       Xgate();
       sphericalToCartesian();
   }
 
   // Apply RX gate animation 
-  void State::RXgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
+  void RXgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
       for (int i=1; i<=steps; i++){
           RXgate(angle/steps);
-          sphericalToCartesian();
           bead.clear();
           //bead.getState().printState(); //for debugging
           bead.setBloch_deg_smooth(bead.state.getTheta(), bead.state.getPhi(), color(255, 0, 255));
@@ -276,7 +275,7 @@ public:
   }
 
   // Apply RY gate animation 
-  void State::RYgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
+  void RYgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
       for (int i=1; i<=steps; i++){
           RYgate(angle/steps);
           bead.clear();
@@ -288,7 +287,7 @@ public:
   }
 
   // Apply RZ gate animation 
-  void State::RZgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
+  void RZgateAni(float angle, Qbead& bead, int steps, float time_in_ms) {
       for (int i=1; i<=steps; i++){
           RZgate(angle/steps);
           bead.clear();
