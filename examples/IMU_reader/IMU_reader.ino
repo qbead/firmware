@@ -28,5 +28,5 @@ void loop() {
   bead.clear();
   bead.setBloch_deg_smooth(bead.state.getTheta(), bead.state.getPhi(), color(255, 0, 255));
   bead.show();
-  delay(5000);
+  delay(500);
 }
