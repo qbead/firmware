@@ -9,6 +9,7 @@
 
 #include <bluefruit.h>
 
+
 // default configs
 #define QB_LEDPIN 0
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
@@ -74,9 +75,6 @@ float sign(float x) {
   else return -1;
 }
 
-// z = cos(t)
-// x = cos(p)sin(t)
-// y = sin(p)sin(t)
 float phi(float x, float y, float z) {
   float ll = x * x + y * y + z * z;
   float l = sqrt(ll);
@@ -143,6 +141,10 @@ public:
   BLECharacteristic blecharacc;
   uint8_t connection_count = 0;
 
+  int curr_index = 0;
+  float msgsent = 0;
+  float accs[62][4];
+
   const uint8_t nsections;
   const uint8_t nlegs;
   const uint8_t theta_quant;
@@ -156,6 +158,16 @@ public:
 
   float t_ble, p_ble; // theta and phi
   uint32_t c_ble; // color
+
+  void xyz(float theta, float phi, uint32_t c) {
+    float phib = phi/180*3.14159;
+    float thetab = theta/180*3.14159;
+    accs[curr_index][0] = sin(thetab) * cos(phib);
+    accs[curr_index][1] = sin(thetab) * sin(phib);
+    accs[curr_index][2] = cos(thetab);
+    accs[curr_index][3] = (float) c;
+    curr_index = curr_index + 1;
+  }
 
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
       singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
@@ -203,9 +215,9 @@ public:
     blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
     blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharacc.setUserDescriptor("xyz acceleration");
-    blecharacc.setFixedLen(3*sizeof(float));
+    blecharacc.setFixedLen(5*sizeof(float));
     blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3*sizeof(float));
+    blecharacc.write(zerobuffer20, 5*sizeof(float));
     startBLEadv();
   }
 
@@ -214,10 +226,38 @@ public:
   }
 
   void show() {
+    for (int i = 0; i < curr_index; i++) {
+      float blearr[4];
+      blearr[0] = accs[i][0];
+      blearr[1] = accs[i][1];
+      blearr[2] = accs[i][2];
+      blearr[3] = accs[i][3];
+      blearr[4] = msgsent;
+      blecharacc.write(blearr, 5*sizeof(float));
+      for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+      {
+        if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
+        {
+          blecharacc.notify(blearr, 5*sizeof(float));
+        }
+      }
+    }
+    if (curr_index > 0) {
+      msgsent = msgsent + 1;
+    }
+
+    for (int i = 0; i < curr_index; i++)
+    {
+      accs[i][0] = 0.0;
+      accs[i][1] = 0.0;
+      accs[i][2] = 0.0;
+      accs[i][3] = 0.0;
+    }
+    curr_index = 0;
     pixels.show();
   }
 
-  void setLegPixelColor(int leg, int pixel, uint32_t color) {
+  void setLegPixelColor(uint32_t leg, uint32_t pixel, uint32_t color) {
     leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
     leg = leg % nlegs;
     if (leg == 0) {
@@ -258,6 +298,7 @@ public:
     if (theta < 0 || theta > 180 || phi < 0 || phi > 360) {
       return;
     }
+    xyz(theta, phi, c);
     float theta_section = theta / theta_quant;
     float phi_leg = phi / phi_quant;
     int theta_int = theta_section + 0.5;
@@ -322,14 +363,6 @@ public:
     rbuffer[0] = x;
     rbuffer[1] = y;
     rbuffer[2] = z;
-    blecharacc.write(rbuffer, 3*sizeof(float));
-    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
-      {
-        blecharacc.notify(rbuffer, 3*sizeof(float));
-      }
-    }
   }
 
   void startBLEadv(void)
