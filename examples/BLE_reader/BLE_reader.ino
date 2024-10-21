@@ -1,4 +1,4 @@
-#include <C:\Users\johan\vismult\firmware\src\Qbead.h>
+#include <Qbead.h>
 
 Qbead::Qbead bead;
 
