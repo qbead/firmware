@@ -1,7 +1,6 @@
-#include <Arduino.h>
-#include "Qbead.h"
+#include <QBead.h>
 
-Qbead bead;
+Qbead::Qbead bead;
 
 
 void setup() {
@@ -23,29 +22,60 @@ void setup() {
     bead.show();
 }
 
-
-//In this example the states of the QBead are restricted to 1/2 probability for 0 and 1
-//The goal is to give an understanding of measurement in these states and the result
 void loop() {
-    bead.readIMU();
+  bead.readIMU();
+
+  bead.clear();
+
+
+
+  float phi = bead.p_acc;
+  bead.setBloch_deg(90, phi, color(255, 0, 255));
+    
+  bead.show();
+  float t_past = bead.t_acc;
+  float p_past = bead.p_acc;
+  delay(200);
+
+  bead.readIMU();
+  
+  if (abs(sqrt(bead.x*bead.x + bead.y*bead.y + bead.z*bead.z)) > 2){ // magnitude of accel vector above 2G
     bead.clear();
-
-    float theta = bead.getState().getTheta();
-    float phi = bead.getState().getPhi();
-    bead.setBloch_deg_smooth(90, phi, color(255, 0, 255));
-
-    if ((bead.getState().getX() * bead.getState().getX() + 
-          bead.getState().getY() * bead.getState().getY() + 
-          bead.getState().getZ() * bead.getState().getZ()) > 2) {
-        Serial.println("Shaked");
-        displayMeasurement();
+    int meas = random(0,2);
+    DisplayMeasurement(meas);
+    if (meas == 1){ // random number 0 or 100
+      bead.setBloch_deg(0, 90, color(0,255,0)); // not smooth for single pixel measurement
+    } else {
+      bead.setBloch_deg(180, 90, color(255,0,0)); // invert the angles. theta is 0-180 and phi 0-360
     }
-
     bead.show();
-    delay(50); 
+    bead.sendMeasurement(meas);
+    delay(2000);
+  }
+
 }
 
-void displayMeasurement() {
-  //waiting for working QBead
-  delay(5000);
-}
+void DisplayMeasurement(int state){
+    for (int i=2; i<5; i++){
+      bead.setLegPixelColor(1, i, color(155,155,155));
+    }
+    bead.setLegPixelColor(5, 2, color(155,155,155));
+    bead.setLegPixelColor(5, 4, color(155,155,155));
+    bead.setLegPixelColor(6, 3, color(155,155,155));
+    if (state ==0){
+      for (int i=2; i<5; i++){
+      bead.setLegPixelColor(2, i, color(155,155,0));
+      bead.setLegPixelColor(4, i, color(155,155,0));
+      }
+      bead.setLegPixelColor(3, 2, color(155,155,0));
+      bead.setLegPixelColor(3, 4, color(155,155,0));
+    } else {
+      for (int i=2; i<5; i++){
+      bead.setLegPixelColor(3, i, color(155,155,0));
+      }
+      bead.setLegPixelColor(2, 2, color(155,155,0));
+      bead.setLegPixelColor(2, 4, color(155,155,0));
+      bead.setLegPixelColor(4, 4, color(155,155,0));
+    }
+  }
+
