@@ -23,7 +23,6 @@
 
         <div id="headerId">
             <canvas id="canvasID" style="display: inline;"></canvas>
-            <canvas id="canvasID2" style="display: inline;"></canvas>
         </div>
 
         <h3>Live Output</h3>
@@ -51,6 +50,11 @@
                 window.x = 0;
                 window.y = 0;
                 window.z = 1;
+                window.r = 0;
+                window.g = 1;
+                window.b = 0;
+
+                window.extra_lights = [];
 
                 const nlegs = 12;
                 const nsections = 6
@@ -96,7 +100,7 @@
                 createBands();
                 createLigths();
 
-                function render() {
+                async function render() {
                     x = window.x;
                     y = window.y;
                     z = window.z;
@@ -106,7 +110,11 @@
                     for (const object of lightsArray) {
                         object.material.color = {r: 0, g: 0, b: 0};
                     }
-                    setBloch_deg_smooth(spher[0], spher[1], {r: 0, g: 1, b: 0} );
+                    setBloch_deg_smooth(spher[0], spher[1], {r: window.r, g: window.g, b: window.b} );
+                    window.extra_lights.forEach((item, index) => {
+                      let sph = cartesianToSpherical(item[0], item[1], item[2]);
+                      setBloch_deg_smooth(sph[0], sph[1], {r: item[3], g: item[4], b: item[5]} );
+                    })
                     requestAnimationFrame(render);
                 }
 
@@ -116,6 +124,7 @@
 
                 
                 function createBands() {
+                    const groupBand = new THREE.Group();
                     const latRange = 4;
 
                     const materialBand = new THREE.MeshBasicMaterial( { color: 0x000000, wireframe:true } );
@@ -123,32 +132,34 @@
 
                     const band1 = new THREE.Mesh( geometryBand, materialBand );
                     band1.rotation.z = Math.PI/2;
-                    scene.add( band1 );
+                    groupBand.add(band1);
 
                     const band2 = new THREE.Mesh( geometryBand, materialBand );
                     band2.rotation.z = Math.PI/2;
                     band2.rotation.y = Math.PI / 2;
-                    scene.add( band2 );
+                    groupBand.add(band2);
 
                     const band3 = new THREE.Mesh( geometryBand, materialBand );
                     band3.rotation.z = Math.PI/2;
                     band3.rotation.y = Math.PI / 3;
-                    scene.add( band3 );
+                    groupBand.add(band3);
 
                     const band4 = new THREE.Mesh( geometryBand, materialBand );
                     band4.rotation.z = Math.PI/2;
                     band4.rotation.y = Math.PI / 2 / 3;
-                    scene.add( band4 );
+                    groupBand.add(band4);
 
                     const band5 = new THREE.Mesh( geometryBand, materialBand );
                     band5.rotation.z = Math.PI/2;
                     band5.rotation.y = - Math.PI / 3;
-                    scene.add( band5 );
+                    groupBand.add(band5);
 
                     const band6 = new THREE.Mesh( geometryBand, materialBand );
                     band6.rotation.z = Math.PI/2;
                     band6.rotation.y = - Math.PI / 2 / 3;
-                    scene.add( band6 );
+                    groupBand.add(band6);
+
+                    scene.add(groupBand);
                 }
 
 
@@ -239,20 +250,40 @@
                     }
                     let theta_section = theta / theta_quant;
                     let phi_leg = phi / phi_quant;
-                    let theta_int = Math.floor(theta_section + 0.5);
+                    let theta_int = Math.round(theta_section);
                     theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int;
-                    let phi_int = Math.floor(phi_leg + 0.5);
+                    let phi_int = Math.round(phi_leg);
                     phi_int = phi_int % nlegs;
 
-                    let p = (theta_section - theta_int);
-                    let theta_direction = Math.sign(p);
-                    p = Math.abs(p);
-                    let q = 1 - p;
-                    p = p * p;
-                    q = q * q;
+                    let phi_direction = 0;
+                    let theta_direction = 0;
+                    let theta_diff = Math.abs(theta_int - theta_section);
+                    let phi_diff = Math.abs(phi_int - phi_leg);
+                    let theta_c1 = 1;
+                    let theta_c2 = 0;
+                    let phi_c1 = 1;
+                    let phi_c2 = 0;
+                    if (theta_diff > 0.1) {
+                      theta_direction = 1;
+                      theta_c1 = theta_diff;
+                      theta_c2 = 1-theta_diff;
+                    }
+
+                    if (phi_diff > 0.1) {
+                      phi_direction = 1;
+                      phi_c1 = phi_diff;
+                      phi_c2 = 1-phi_diff;
+                    }
+
+                    let avg_1 = theta_c1*phi_c1 + theta_c2*phi_c1;
+                    let avg_2 = theta_c1*phi_c2 + theta_c2*phi_c2;
+                    console.log(avg_1, avg_2);
+                    
+
+                    // console.log(avg_pt, avg_qr);
                     //In this order otherwise at the top the colour is reset if it is called for exactly the top twice
-                    setLegPixelColor(phi_int, theta_int + theta_direction, {r: p * c.r, g: p * c.g, b: p * c.b});
-                    setLegPixelColor(phi_int, theta_int, {r: q * c.r, g: q * c.g, b: q * c.b});
+                    setLegPixelColor(phi_int + phi_direction, theta_int + theta_direction, {r: avg_2 * c.r, g: avg_2 * c.g, b: avg_2 * c.b});
+                    setLegPixelColor(phi_int, theta_int, {r: avg_1 * c.r, g: avg_1 * c.g, b: avg_1 * c.b});
                 }
 
                 // Set the color of a specific LED
@@ -274,7 +305,16 @@
 
                 function setPixelColor(pixel, color) {
                     const light = lightsArray[pixel];
-                    light.material.color = color
+                    var old = light.material.color;
+                    //curve colors
+                    var r = Math.pow(1-Math.pow(1-color.r, 2), 0.5);
+                    var b = Math.pow(1-Math.pow(1-color.b, 2), 0.5);
+                    var g = Math.pow(1-Math.pow(1-color.g, 2), 0.5);
+                    //mix
+                    if (old.r > 0.01) r = (r + old.r)/2;
+                    if (old.g > 0.01) g = (g + old.g)/2;
+                    if (old.b > 0.01) b = (b + old.b)/2
+                    light.material.color = {r: r, g: g, b: b};
                 }
             </script>
         </div>
@@ -313,6 +353,9 @@
             var accCharacteristic;
             var sphCharacteristic;
             var colCharacteristic;
+
+            var cur_msg_num = 0;
+            var count = 0;
             
             function onStartButtonClick() {
               let serviceUuid = "e30c1fc6-359c-12be-2544-63d6aa088d45";
@@ -395,18 +438,46 @@
             function handleNotifications(event) {
               new Uint8Array(event.target.value.buffer).reverse();
               let value = event.target.value;
-              let z = value.getFloat32(0);
-              let y = value.getFloat32(4);
-              let x = value.getFloat32(8);
+              let num = value.getFloat32(0);
+              let c = value.getFloat32(4);
+              let z = value.getFloat32(8);
+              let y = value.getFloat32(12);
+              let x = value.getFloat32(16);
+              let b = ((c >> (0)) & 0xff)/255;
+              let g = ((c >> (8)) & 0xff)/255;
+              let r = ((c >> (16)) & 0xff)/255;
+              if (cur_msg_num != num) {
+                //set first value to the arrow
+                //leave only as much array elements as there were last message cycle
+                let temp = []
+                for (let i = 0; i < count; i++) {
+                  temp.push(window.extra_lights[i]);
+                }
+                window.extra_lights = temp;
+                count = 0;
+                cur_msg_num = num;
+                let t = theta(x, y, z)*180/3.14159;
+                let p = phi(x, y, z)*180/3.14159;
+                window.x = x;
+                window.y = y;
+                window.z = z;
+                window.r = r;
+                window.g = g;
+                window.b = b;
+                log(`> ${x.toFixed(3)} ${y.toFixed(3)} ${z.toFixed(3)} ${t.toFixed(0)} ${p.toFixed(0)} `);
+              } else {
+                //overwrite each array element
+                if (window.extra_lights[count]) {
+                  window.extra_lights[count] = [x, y, z, r, g, b]
+                } else {
+                  window.extra_lights.push([x, y, z, r, g, b]);
+                }
+                count = count + 1;
+              }
+
               // Convert raw data bytes to hex values just for the sake of showing something.
               // In the "real" world, you'd use data.getUint8, data.getUint16 or even
               // TextDecoder to process raw data bytes.
-              let t = theta(x, y, z)*180/3.14159;
-              let p = phi(x, y, z)*180/3.14159;
-              window.x = x;
-              window.y = y;
-              window.z = z;
-              log(`> ${x.toFixed(3)} ${y.toFixed(3)} ${z.toFixed(3)} ${t.toFixed(0)} ${p.toFixed(0)} `);
             }
             </script>
             
