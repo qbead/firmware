@@ -21,6 +21,8 @@ https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
 
 - The state class is simply a convenient way to store a block sphere and represent it in various ways. It can be used as an object to "plot" on the output device LEDs. It is not directly related to the values on the input device motion sensor (unless set to be related by an example sketch).
 
+- There should be no blocking code and no `sleep` or `wait` functions. Rather anything that needs to be called at regular intervals should either use interrupts (rather advanced) or should keep its own page internally and just be called on each event loop iteration (similar to how the motion sensor is currently set or by having `now()-last_call < period || return` type-of short circuits).
+
 ### Code style
 
 - Keep the codebase organized as an Arduino library: a source folder for the underlying capabilities and an example folder with sketches that can be uploaded to the device.
