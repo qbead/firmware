@@ -23,7 +23,8 @@ void setup() {
 }
 
 void loop() {
+  bead.state.setThetaPhi(bead.t_ble, bead.p_ble);
   bead.clear();
-  bead.setBloch_deg_smooth(bead.t_ble, bead.p_ble, bead.c_ble);
+  bead.setBloch_deg_smooth(bead.state.getTheta(), bead.state.getPhi(), bead.c_ble);
   bead.show();
 }
