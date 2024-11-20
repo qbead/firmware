@@ -1,12 +1,10 @@
 #ifndef QBEAD_H
 #define QBEAD_H
 
-
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
 #include <math.h>
-
 #include <bluefruit.h>
 
 // default configs
@@ -32,6 +30,15 @@ const uint8_t QB_UUID_SPH_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
 const uint8_t QB_UUID_ACC_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_SERVICE_1[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_ENTG_1[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_SERVICE_2[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+1,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_ENTG_2[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
+
 
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
@@ -91,17 +98,121 @@ float theta(float x, float y, float z) {
   return theta;
 }
 
-void connect_callback(uint16_t conn_handle)
-{
-  // Get the reference to current connection
-  BLEConnection* connection = Bluefruit.Connection(conn_handle);
+// void connect_callback(uint16_t conn_handle){
+//   // Get the reference to current connection
+//   BLEConnection* connection = Bluefruit.Connection(conn_handle);
 
-  char central_name[32] = { 0 };
-  connection->getPeerName(central_name, sizeof(central_name));
+//   char central_name[32] = { 0 };
+//   connection->getPeerName(central_name, sizeof(central_name));
 
-  Serial.print("Connected to "); // TODO take care of cases where Serial is not available
-  Serial.println(central_name);
-}
+//   Serial.print("Connected to "); // TODO take care of cases where Serial is not available
+//   Serial.println(central_name);
+// }
+
+// State Class Definition
+class State {
+private:
+    float x, y, z;    // Cartesian coordinates
+    float theta, phi; // Spherical coordinates
+
+    void cartesianToSpherical() {
+        float l = sqrt(x * x + y * y + z * z);
+        if (l == 0) l = 1;
+        theta = acos(z / l) * 180 / PI;
+        phi = atan2(y, x) * 180 / PI;
+        if (phi < 0) phi += 360;
+    }
+
+    void sphericalToCartesian() {
+        float r = 1;
+        x = r * sin(theta * PI / 180.0) * cos(phi * PI / 180.0);
+        y = r * sin(theta * PI / 180.0) * sin(phi * PI / 180.0);
+        z = r * cos(theta * PI / 180.0);
+    }
+
+public:
+    // Constructors
+    State() : x(0), y(0), z(1) {
+        cartesianToSpherical();
+    }
+
+    State(float x_init, float y_init, float z_init) : x(x_init), y(y_init), z(z_init) {
+        cartesianToSpherical();
+    }
+
+    State(float theta_init, float phi_init) : theta(theta_init), phi(phi_init) {
+        sphericalToCartesian();
+    }
+
+    // Setters and getters
+    void setX(float new_x) {
+        x = new_x;
+        cartesianToSpherical();
+    }
+
+    void setY(float new_y) {
+        y = new_y;
+        cartesianToSpherical();
+    }
+
+    void setZ(float new_z) {
+        z = new_z;
+        cartesianToSpherical();
+    }
+
+    void setXYZ(float new_x, float new_y, float new_z) {
+        x = new_x;
+        y = new_y;
+        z = new_z;
+        cartesianToSpherical();
+    }
+
+    void setTheta(float new_theta) {
+        theta = new_theta;
+        sphericalToCartesian();
+    }
+
+    void setPhi(float new_phi) {
+        phi = new_phi;
+        sphericalToCartesian();
+    }
+
+    void setThetaPhi(float new_theta, float new_phi) {
+        theta = new_theta;
+        phi = new_phi;
+        sphericalToCartesian();
+    }
+
+    float getX() const {
+        return x;
+    }
+
+    float getY() const {
+        return y;
+    }
+
+    float getZ() const {
+        return z;
+    }
+
+    float getTheta() const {
+        return theta;
+    }
+
+    float getPhi() const {
+        return phi;
+    }
+
+    // Method to print the state
+    void printState() {
+        Serial.print("Cartesian: x = "); Serial.print(x);
+        Serial.print(", y = "); Serial.print(y);
+        Serial.print(", z = "); Serial.println(z);
+
+        Serial.print("Spherical: theta = "); Serial.print(theta);
+        Serial.print(", phi = "); Serial.println(phi);
+    }
+};
 
 namespace Qbead {
 
@@ -126,10 +237,14 @@ public:
         phi_quant(360 / nlegs),
         ix(ix), iy(iy), iz(iz),
         sx(sx), sy(sy), sz(sz),
-        bleservice(QB_UUID_SERVICE),
-        blecharcol(QB_UUID_COL_CHAR),
-        blecharsph(QB_UUID_SPH_CHAR),
-        blecharacc(QB_UUID_ACC_CHAR)
+        bleservice_1(QB_UUID_SERVICE_1),
+        blechentg_1(QB_UUID_ENTG_1),
+        bleservice_2(QB_UUID_SERVICE_2),
+        blechentg_2(QB_UUID_ENTG_2)
+        // bleservice(QB_UUID_SERVICE),
+        // blecharcol(QB_UUID_COL_CHAR),
+        // blecharsph(QB_UUID_SPH_CHAR),
+        // blecharacc(QB_UUID_ACC_CHAR)
         {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
@@ -137,11 +252,15 @@ public:
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
-  BLEService bleservice;
-  BLECharacteristic blecharcol;
-  BLECharacteristic blecharsph;
-  BLECharacteristic blecharacc;
-  uint8_t connection_count = 0;
+  BLEService bleservice_1;
+  BLECharacteristic blechentg_1;
+  BLEService bleservice_2;
+  BLECharacteristic blechentg_2;
+  // BLEService bleservice;
+  // BLECharacteristic blecharcol;
+  // BLECharacteristic blecharsph;
+  // BLECharacteristic blecharacc;
+  // uint8_t connection_count = 0;
 
   const uint8_t nsections;
   const uint8_t nlegs;
@@ -152,21 +271,110 @@ public:
   float rbuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float t_acc, p_acc;        // theta and phi according to gravity
-  float T_imu;             // last update from the IMU
+  float T_imu;               // last update from the IMU
 
-  float t_ble, p_ble; // theta and phi
+  float t_ble, p_ble;       // BLE theta and phi
+
+  State state;
+
   uint32_t c_ble; // color
 
-  static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-      singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
+  // static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
+  //     singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
+  // }
+
+  // static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
+  //     singletoninstance->t_ble = data[0]*180/255;
+  //     singletoninstance->p_ble = data[1]*360/255;
+  // }
+
+  static void writeCallback_1(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
+    if(data[0]==0){
+      Serial.println("The Qbead collapsed to State down.");
+    }
+    else if(data[0]==1){
+      Serial.println("The Qbead collapsed to State up.");
+    }
   }
 
-  static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
-      singletoninstance->t_ble = data[0]*180/255;
-      singletoninstance->p_ble = data[1]*360/255;
+  static void writeCallback_2(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
+    if(data[0]==1){
+      Serial.println("The Qbead collapsed to State down.");
+    }
+    else if(data[0]==0){
+      Serial.println("The Qbead collapsed to State up.");
+    }
   }
 
-  void begin() {
+  void startBLEadv_1(void)
+  {
+    // Advertising packet
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    Bluefruit.Advertising.addTxPower();
+
+    // Include HRM Service UUID
+    Bluefruit.Advertising.addService(bleservice_1);
+
+    // Secondary Scan Response packet (optional)
+    // Since there is no room for 'Name' in Advertising packet
+    Bluefruit.ScanResponse.addName();
+    
+    /* Start Advertising
+    * - Enable auto advertising if disconnected
+    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+    * - Timeout for fast mode is 30 seconds
+    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+    * 
+    * For recommended advertising interval
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html   
+    */
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
+  }
+
+  void startBLEadv_2(void)
+  {
+    // Advertising packet
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    Bluefruit.Advertising.addTxPower();
+
+    // Include HRM Service UUID
+    Bluefruit.Advertising.addService(bleservice_2);
+
+    // Secondary Scan Response packet (optional)
+    // Since there is no room for 'Name' in Advertising packet
+    Bluefruit.ScanResponse.addName();
+    
+    /* Start Advertising
+    * - Enable auto advertising if disconnected
+    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+    * - Timeout for fast mode is 30 seconds
+    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+    * 
+    * For recommended advertising interval
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html   
+    */
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
+  }
+
+  static void connect_callback(uint16_t conn_handle)
+  {
+    // Get the reference to current connection
+    BLEConnection* connection = Bluefruit.Connection(conn_handle);
+
+    char central_name[32] = { 0 };
+    connection->getPeerName(central_name, sizeof(central_name));
+
+    Serial.print("Connected to ");
+    Serial.println(central_name);
+  }
+
+  void begin(int entg) {
     singletoninstance = this;
     Serial.begin(9600);
     while (!Serial); // TODO some form of warning or a way to give up if Serial never becomes available
@@ -175,38 +383,85 @@ public:
     clear();
     setBrightness(10);
 
+    state.setXYZ(0, 0, 1);  // Ensure the state starts pointing along the z-axis
+
     Serial.println("qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
-    if (!imu.begin()) {
-      Serial.println("IMU error");
+    uint16_t imuResult = imu.begin();
+    if (imuResult != 0) {
+        Serial.print("IMU error: ");
+        Serial.println(imuResult);
     } else {
-      Serial.println("IMU OK");
+        Serial.println("IMU OK");
     }
 
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
     Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
     Bluefruit.Periph.setConnectCallback(connect_callback);
-    bleservice.begin();
-    blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharcol.setUserDescriptor("rgb color");
-    blecharcol.setFixedLen(3);
-    blecharcol.setWriteCallback(ble_callback_color);
-    blecharcol.begin();
-    blecharcol.write(zerobuffer20, 3);
-    blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharsph.setUserDescriptor("spherical coordinates");
-    blecharsph.setFixedLen(2);
-    blecharsph.setWriteCallback(ble_callback_theta_phi);
-    blecharsph.begin();
-    blecharsph.write(zerobuffer20, 2);
-    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharacc.setUserDescriptor("xyz acceleration");
-    blecharacc.setFixedLen(3*sizeof(float));
-    blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3*sizeof(float));
-    startBLEadv();
+    // bleservice.begin();
+    // blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    // blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    // blecharcol.setUserDescriptor("rgb color");
+    // blecharcol.setFixedLen(3);
+    // blecharcol.setWriteCallback(ble_callback_color);
+    // blecharcol.begin();
+    // blecharcol.write(zerobuffer20, 3);
+    // blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    // blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    // blecharsph.setUserDescriptor("spherical coordinates");
+    // blecharsph.setFixedLen(2);
+    // blecharsph.setWriteCallback(ble_callback_theta_phi);
+    // blecharsph.begin();
+    // blecharsph.write(zerobuffer20, 2);
+    // blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    // blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    // blecharacc.setUserDescriptor("xyz acceleration");
+    // blecharacc.setFixedLen(3 * sizeof(float));
+    // blecharacc.begin();
+    // blecharacc.write(zerobuffer20, 3 * sizeof(float));
+    // startBLEadv();
+
+    Serial.println(entg);
+
+    if(entg==1){
+      Serial.println("Is this the first or the second device? Write 0 for the first one, 1 for the second.");
+      delay(5000);
+      while (!Serial.available()){}
+      int number= Serial.parseInt();
+      Serial.println(number);
+
+      
+      if(number==0){
+        Bluefruit.setName("QBEAD_1");
+        Serial.println("QBEAD_1");
+        bleservice_1.begin();
+      
+        blechentg_1.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY | CHR_PROPS_WRITE);
+        blechentg_1.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+        blechentg_1.setUserDescriptor("Entanglement");
+        blechentg_1.setFixedLen(3*sizeof(float));
+        blechentg_1.begin();
+        blechentg_1.write(zerobuffer20, 3*sizeof(float));
+        blechentg_1.setWriteCallback(writeCallback_1);
+
+        startBLEadv_1();
+      }
+      else if (number==1){
+        Bluefruit.setName("QBEAD_2");
+        Serial.println("QBEAD_2");
+        bleservice_2.begin();
+      
+        blechentg_2.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY | CHR_PROPS_WRITE);
+        blechentg_2.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+        blechentg_2.setUserDescriptor("Entanglement");
+        blechentg_2.setFixedLen(3*sizeof(float));
+        blechentg_2.begin();
+        blechentg_2.write(zerobuffer20, 3*sizeof(float));
+        blechentg_2.setWriteCallback(writeCallback_2);
+
+        startBLEadv_2();
+      }
+    }
+
   }
 
   void clear() {
@@ -221,13 +476,13 @@ public:
     leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
     leg = leg % nlegs;
     if (leg == 0) {
-      pixels.setPixelColor(pixel, color);
+        pixels.setPixelColor(pixel, color);
     } else if (pixel == 0) {
-      pixels.setPixelColor(0, color);
+        pixels.setPixelColor(0, color);
     } else if (pixel == 6) {
-      pixels.setPixelColor(6, color);
+        pixels.setPixelColor(6, color);
     } else {
-      pixels.setPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1, color);
+        pixels.setPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1, color);
     }
   }
 
@@ -239,17 +494,17 @@ public:
     if (theta < 0 || theta > 180 || phi < 0 || phi > 360) {
       return;
     }
-    float theta_section = theta / theta_quant;
+    float theta_section = state.getTheta() / theta_quant;
     if (theta_section < 0.5) {
       setLegPixelColor(0, 0, color);
     } else if (theta_section > nsections - 0.5) {
       setLegPixelColor(0, nsections, color);
     } else {
-      float phi_leg = phi / phi_quant;
+      float phi_leg = state.getPhi() / phi_quant;
       int theta_int = theta_section + 0.5;
       theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
       int phi_int = phi_leg + 0.5;
-      phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+      phi_int = phi_int % nlegs;
       setLegPixelColor(phi_int, theta_int, color);
     }
   }
@@ -261,9 +516,9 @@ public:
     float theta_section = theta / theta_quant;
     float phi_leg = phi / phi_quant;
     int theta_int = theta_section + 0.5;
-    theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
+    theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int;  // to avoid precision issues near the end of the range
     int phi_int = phi_leg + 0.5;
-    phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+    phi_int = phi_int % nlegs;
 
     float p = (theta_section - theta_int);
     int theta_direction = sign(p);
@@ -273,11 +528,11 @@ public:
     q = q * q;
 
     uint8_t rc = redch(c);
-    uint8_t bc = bluech(c);
     uint8_t gc = greench(c);
+    uint8_t bc = bluech(c);
 
-    setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
-    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
+    setLegPixelColor(phi_int, theta_int, color(q * rc, q * gc, q * bc));
+    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * gc, p * bc));
   }
 
   void readIMU() {
@@ -322,43 +577,44 @@ public:
     rbuffer[0] = x;
     rbuffer[1] = y;
     rbuffer[2] = z;
-    blecharacc.write(rbuffer, 3*sizeof(float));
-    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
-      {
-        blecharacc.notify(rbuffer, 3*sizeof(float));
-      }
-    }
+    // blecharacc.write(rbuffer, 3*sizeof(float));
+    // for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    // {
+    //   if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
+    //   {
+    //     blecharacc.notify(rbuffer, 3*sizeof(float));
+    //   }
+    // }
   }
 
-  void startBLEadv(void)
-  {
-    // Advertising packet
-    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-    Bluefruit.Advertising.addTxPower();
+  // void startBLEadv(void)
+  // {
+  //   // Advertising packet
+  //   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+  //   Bluefruit.Advertising.addTxPower();
 
-    // Include HRM Service UUID
-    Bluefruit.Advertising.addService(bleservice);
+  //   // Include HRM Service UUID
+  //   Bluefruit.Advertising.addService(bleservice);
 
-    // Secondary Scan Response packet (optional)
-    // Since there is no room for 'Name' in Advertising packet
-    Bluefruit.ScanResponse.addName();
+  //   // Secondary Scan Response packet (optional)
+  //   // Since there is no room for 'Name' in Advertising packet
+  //   Bluefruit.ScanResponse.addName();
 
-    /* Start Advertising
-    * - Enable auto advertising if disconnected
-    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
-    * - Timeout for fast mode is 30 seconds
-    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
-    *
-    * For recommended advertising interval
-    * https://developer.apple.com/library/content/qa/qa1931/_index.html
-    */
-    Bluefruit.Advertising.restartOnDisconnect(true);
-    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
-    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
-  }
+  //   /* Start Advertising
+  //   * - Enable auto advertising if disconnected
+  //   * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+  //   * - Timeout for fast mode is 30 seconds
+  //   * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+  //   *
+  //   * For recommended advertising interval
+  //   * https://developer.apple.com/library/content/qa/qa1931/_index.html
+  //   */
+  //   Bluefruit.Advertising.restartOnDisconnect(true);
+  //   Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+  //   Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+  //   Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
+  // }
+
 
 }; // end class
 
