@@ -99,7 +99,7 @@ void connect_callback(uint16_t conn_handle)
   char central_name[32] = { 0 };
   connection->getPeerName(central_name, sizeof(central_name));
 
-  Serial.print("Connected to "); // TODO take care of cases where Serial is not available
+  Serial.print("[INFO]{BLE} Connected to "); // TODO take care of cases where Serial is not available
   Serial.println(central_name);
 }
 
@@ -154,16 +154,24 @@ public:
   float t_acc, p_acc;        // theta and phi according to gravity
   float T_imu;             // last update from the IMU
 
-  float t_ble, p_ble; // theta and phi
-  uint32_t c_ble; // color
+  float t_ble, p_ble; // theta and phi as sent over BLE connection
+  uint32_t c_ble = 0xffffff; // color as sent over BLE connection
 
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-      singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
+    Serial.println("[INFO]{BLE} Received a write on the color characteristic");
+    singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
+    Serial.print("[DEBUG]{BLE} Received");
+    Serial.println(singletoninstance->c_ble, HEX);
   }
 
   static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
-      singletoninstance->t_ble = data[0]*180/255;
-      singletoninstance->p_ble = data[1]*360/255;
+    Serial.println("[INFO]{BLE} Received a write on the spherical coordinates characteristic");
+    singletoninstance->t_ble = ((uint32_t)data[0])*180/255;
+    singletoninstance->p_ble = ((uint32_t)data[1])*360/255;
+    Serial.print("[DEBUG]{BLE} Received t=");
+    Serial.print(singletoninstance->t_ble);
+    Serial.print(" p=");
+    Serial.println(singletoninstance->p_ble);
   }
 
   void begin() {
@@ -175,31 +183,35 @@ public:
     clear();
     setBrightness(10);
 
-    Serial.println("qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
+    Serial.println("[INFO] Booting... Qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
     if (!imu.begin()) {
-      Serial.println("IMU error");
+      Serial.println("[DEBUG]{IMU} IMU initialized correctly");
     } else {
-      Serial.println("IMU OK");
+      Serial.println("[ERROR]{IMU} IMU failed to initialize");
     }
 
+    // BLE Peripheral service setup
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
     Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
     Bluefruit.Periph.setConnectCallback(connect_callback);
     bleservice.begin();
+    // BLE Characteristic Bloch Sphere Visualizer color setup
     blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharcol.setUserDescriptor("rgb color");
+    blecharcol.setUserDescriptor("BSV rgb color");
     blecharcol.setFixedLen(3);
     blecharcol.setWriteCallback(ble_callback_color);
     blecharcol.begin();
     blecharcol.write(zerobuffer20, 3);
+    // BLE Characteristic Bloch Sphere Visualizer spherical coordinate setup
     blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharsph.setUserDescriptor("spherical coordinates");
+    blecharsph.setUserDescriptor("BSV spherical coordinates");
     blecharsph.setFixedLen(2);
     blecharsph.setWriteCallback(ble_callback_theta_phi);
     blecharsph.begin();
     blecharsph.write(zerobuffer20, 2);
+    // BLE Characteristic IMU xyz readout
     blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
     blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharacc.setUserDescriptor("xyz acceleration");
@@ -280,7 +292,7 @@ public:
     setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
   }
 
-  void readIMU() {
+  void readIMU(bool print=true) {
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
     rbuffer[2] = imu.readFloatAccelZ();
@@ -307,17 +319,19 @@ public:
     p_acc = phi(x, y, z)*180/3.14159;
     if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
 
-    Serial.print(x);
-    Serial.print("\t");
-    Serial.print(y);
-    Serial.print("\t");
-    Serial.print(z);
-    Serial.print("\t-1\t1\t");
-    Serial.print(t_acc);
-    Serial.print("\t");
-    Serial.print(p_acc);
-    Serial.print("\t-360\t360\t");
-    Serial.println();
+    if (print) {
+      Serial.print(x);
+      Serial.print("\t");
+      Serial.print(y);
+      Serial.print("\t");
+      Serial.print(z);
+      Serial.print("\t-1\t1\t");
+      Serial.print(t_acc);
+      Serial.print("\t");
+      Serial.print(p_acc);
+      Serial.print("\t-360\t360\t");
+      Serial.println();
+    }
 
     rbuffer[0] = x;
     rbuffer[1] = y;
@@ -334,6 +348,7 @@ public:
 
   void startBLEadv(void)
   {
+    Serial.println("[INFO]{BLE} Start advertising...");
     // Advertising packet
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
     Bluefruit.Advertising.addTxPower();

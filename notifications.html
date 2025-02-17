@@ -34,9 +34,9 @@
   <button id="stopNotifications">Stop connection</button>
   <div>
     <br>
-    θ:<input type="range" min="0" max="360" value="0" id="thetarange" disabled>
+    θ:<input type="range" min="0" max="180" value="0" id="thetarange">
     <br>
-    φ:<input type="range" min="0" max="180" value="0" id="phirange" disabled>
+    φ:<input type="range" min="0" max="360" value="0" id="phirange">
   </div>
 </form>
 
@@ -220,7 +220,7 @@ function handleNotifications(event) {
     event.preventDefault();
     console.log(thetaInput.value);
     if (isWebBluetoothEnabled()) {
-      let newthetaphi = Uint8Array.of(thetaInput.value, phiInput.value);
+      let newthetaphi = Uint8Array.of(Math.floor(thetaInput.value*255/180), Math.floor(phiInput.value*255/360));
       sphCharacteristic.writeValue(newthetaphi);
     }
   });
@@ -230,7 +230,7 @@ function handleNotifications(event) {
     event.preventDefault();
     console.log(phiInput.value);
     if (isWebBluetoothEnabled()) {
-      let newthetaphi = Uint8Array.of(thetaInput.value, phiInput.value);
+      let newthetaphi = Uint8Array.of(Math.floor(thetaInput.value*255/180), Math.floor(phiInput.value*255/360));
       sphCharacteristic.writeValue(newthetaphi);
     }
   });
