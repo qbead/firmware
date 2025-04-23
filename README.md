@@ -1,11 +1,22 @@
 # firmware
 
-## Required board files
+## Installation
+
+### Required board files
+Add the following links to Arduino IDE => Preferences => Additional boards manager URLs.
 
 ```
 https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
 https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
 ```
+
+### Packages
+Add the following packages to Arduino IDE => Library Manager:
+- Adafruit NeoPixel
+- Seeed Arduino LSM6DS3
+
+The `src` of this firmware also needs to be added as an Arduino library. This can be done two ways. The first option is to compress the `src` folder to a `.zip` file and then add it in Arduino IDE => sketch => Include library => Add .ZIP library. The second option is to create a symlink between the `src` folder and the Arduino library folder.
+
 
 ## Contribution guidelines
 
