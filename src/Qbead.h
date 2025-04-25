@@ -272,7 +272,7 @@ public:
     if (!checkThetaAndPhi(theta, phi)) return;
     float theta_section = theta / theta_quant;
     float phi_leg = phi / phi_quant;
-    int theta_int = std::min(nsections - 1, theta_section + 0.5); // to avoid precision issues near the end of the range
+    int theta_int = min(nsections - 1, theta_section + 0.5); // to avoid precision issues near the end of the range
     int phi_int = phi_leg + 0.5;
     phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
 
