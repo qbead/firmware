@@ -91,6 +91,10 @@ float theta(float x, float y, float z) {
   return theta;
 }
 
+bool checkThetaAndPhi(float theta, float phi) {
+  return theta >= 0 && theta <= 180 && phi >= 0 && phi <= 360;
+}
+
 void connect_callback(uint16_t conn_handle)
 {
   // Get the reference to current connection
@@ -248,9 +252,7 @@ public:
   }
 
   void setBloch_deg(float theta, float phi, uint32_t color) {
-    if (theta < 0 || theta > 180 || phi < 0 || phi > 360) {
-      return;
-    }
+    if (!checkThetaAndPhi(theta, phi)) return;
     float theta_section = theta / theta_quant;
     if (theta_section < 0.5) {
       setLegPixelColor(0, 0, color);
@@ -267,13 +269,10 @@ public:
   }
 
   void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
-    if (theta < 0 || theta > 180 || phi < 0 || phi > 360) {
-      return;
-    }
+    if (!checkThetaAndPhi(theta, phi)) return;
     float theta_section = theta / theta_quant;
     float phi_leg = phi / phi_quant;
-    int theta_int = theta_section + 0.5;
-    theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
+    int theta_int = std::min(nsections - 1, theta_section + 0.5); // to avoid precision issues near the end of the range
     int phi_int = phi_leg + 0.5;
     phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
 

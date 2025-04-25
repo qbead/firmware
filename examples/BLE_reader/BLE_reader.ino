@@ -15,7 +15,7 @@ void setup() {
   for (int phi = 0; phi < 360; phi += 30) {
     for (int theta = 0; theta < 180; theta += 3) {
       bead.clear();
-      bead.setBloch_deg(theta, phi, colorWheel(phi));
+      bead.setBloch_deg(theta, phi, colorWheel_deg(phi));
       bead.show();
     }
   }
