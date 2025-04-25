@@ -53,14 +53,16 @@ static uint8_t bluech(uint32_t rgb) {
 }
 
 uint32_t colorWheel(uint8_t wheelPos) {
-  uint16_t hue = wheelPos * 3;
-  if (hue > 510) {
-      return color(hue - 510, 0, 765 - hue);
-  } else if (hue > 255) {
-      return color(0, 510 - hue, hue - 255);
-  } else {
-      return color(255 - hue, hue, 0);
+  wheelPos = 255 - wheelPos;
+  if (wheelPos < 85) {
+    return color(255 - wheelPos * 3, 0, wheelPos * 3);
   }
+  if (wheelPos < 170) {
+    wheelPos -= 85;
+    return color(0, wheelPos * 3, 255 - wheelPos * 3);
+  }
+  wheelPos -= 170;
+  return color(wheelPos * 3, 255 - wheelPos * 3, 0);
 }
 
 uint32_t colorWheel_deg(float wheelPos) {
