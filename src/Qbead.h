@@ -74,14 +74,14 @@ float sign(float x) {
   else return -1;
 }
 
-// z = cos(t)
-// x = cos(p)sin(t)
-// y = sin(p)sin(t)
-float phi(float x, float y, float z) {
-  float ll = x * x + y * y + z * z;
-  float l = sqrt(ll);
-  float phi = atan2(y, x);
-  return phi;
+int roundToInt(float x) {
+  if (x > 0) return (int)(x + 0.5);
+  else return (int)(x - 0.5);
+}
+
+// Return the angle in radians between the x-axis and the line to the point (x, y)
+float phi(float x, float y) {
+  return atan2(y, x);
 }
 
 float theta(float x, float y, float z) {
@@ -259,10 +259,8 @@ public:
     } else if (theta_section > nsections - 0.5) {
       setLegPixelColor(0, nsections, color);
     } else {
-      float phi_leg = phi / phi_quant;
-      int theta_int = theta_section + 0.5;
-      theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
-      int phi_int = phi_leg + 0.5;
+      int theta_int = min(nsections - 1, roundToInt(theta_section)); // to avoid precision issues near the end of the range
+      int phi_int = roundToInt(phi / phi_quant);
       phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
       setLegPixelColor(phi_int, theta_int, color);
     }
@@ -271,9 +269,8 @@ public:
   void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
     if (!checkThetaAndPhi(theta, phi)) return;
     float theta_section = theta / theta_quant;
-    float phi_leg = phi / phi_quant;
-    int theta_int = min(nsections - 1, theta_section + 0.5); // to avoid precision issues near the end of the range
-    int phi_int = phi_leg + 0.5;
+    int theta_int = min(nsections - 1, roundToInt(theta_section)); // to avoid precision issues near the end of the range
+    int phi_int = roundToInt(phi / phi_quant);
     phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
 
     float p = (theta_section - theta_int);
@@ -315,7 +312,7 @@ public:
     }
 
     t_acc = theta(x, y, z)*180/3.14159;
-    p_acc = phi(x, y, z)*180/3.14159;
+    p_acc = phi(x, y)*180/3.14159;
     if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
 
     if (print) {
