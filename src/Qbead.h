@@ -79,6 +79,9 @@ int roundToInt(float x) {
   else return (int)(x - 0.5);
 }
 
+// z = cos(t)
+// x = cos(p)sin(t)
+// y = sin(p)sin(t)
 // Return the angle in radians between the x-axis and the line to the point (x, y)
 float phi(float x, float y) {
   return atan2(y, x);
