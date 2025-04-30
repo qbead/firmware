@@ -74,6 +74,7 @@ float sign(float x) {
   else return -1;
 }
 
+// To avoid precision issues
 int roundToInt(float x) {
   if (x > 0) return (int)(x + 0.5);
   else return (int)(x - 0.5);
@@ -85,6 +86,10 @@ int roundToInt(float x) {
 // Return the angle in radians between the x-axis and the line to the point (x, y)
 float phi(float x, float y) {
   return atan2(y, x);
+}
+
+float phi(float x, float y, float z) {
+  return phi(x, y);
 }
 
 float theta(float x, float y, float z) {
