@@ -120,6 +120,7 @@ namespace Qbead {
     }
     Coordinates(float Theta, float Phi) {
       if !checkThetaAndPhi(Theta, Phi) {
+        Serial.Print("Theta or Phi out of range when creating coordinates class, initializing as 1")
         x = 0;
         y = 0;
         z = 1;
