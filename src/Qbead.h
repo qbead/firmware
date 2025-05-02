@@ -109,6 +109,55 @@ void connect_callback(uint16_t conn_handle)
 
 namespace Qbead {
 
+  class Coordinates{
+    public:
+    float x, y, z;
+
+    Coordinates(float argx, float argy, float argz) {
+      x = argx;
+      y = argy;
+      z = argz;
+    }
+    Coordinates(float Theta, float Phi) {
+      if !checkThetaAndPhi(Theta, Phi) {
+        x = 0;
+        y = 0;
+        z = 1;
+        return;
+      }
+
+      x = sin(Theta) * cos(Phi);
+      y = sin(Theta) * sin(Phi);
+      z = cos(Theta);
+    }
+
+    float Theta() {
+      float ll = x * x + y * y + z * z;
+      float l = sqrt(ll);
+      float theta = acos(z / l);
+      return theta;
+    }
+
+    float Phi() {
+      float ll = x * x + y * y + z * z;
+      float l = sqrt(ll);
+      float phi = atan2(y, x);
+      return phi;
+    }
+  }
+
+class QuantumState {
+  private:
+  Coordinates stateCoordinates;
+  public:
+  QuantumState(Coordinates argStateCoordinates) {
+    stateCoordinates = argStateCoordinates;
+  }
+  QuantumState() {
+    stateCoordinates = Coordinates(0, 0, 1);
+  }
+}
+
 class Qbead {
 public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
