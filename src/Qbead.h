@@ -109,55 +109,94 @@ void connect_callback(uint16_t conn_handle)
 
 namespace Qbead {
 
-  class Coordinates{
-    public:
-    float x, y, z;
+class Coordinates
+{
+public:
+  float x, y, z;
 
-    Coordinates(float argx, float argy, float argz) {
-      x = argx;
-      y = argy;
-      z = argz;
-    }
-    Coordinates(float Theta, float Phi) {
-      if !checkThetaAndPhi(Theta, Phi) {
-        Serial.Print("Theta or Phi out of range when creating coordinates class, initializing as 1")
-        x = 0;
-        y = 0;
-        z = 1;
-        return;
-      }
-
-      x = sin(Theta) * cos(Phi);
-      y = sin(Theta) * sin(Phi);
-      z = cos(Theta);
-    }
-
-    float Theta() {
-      float ll = x * x + y * y + z * z;
-      float l = sqrt(ll);
-      float theta = acos(z / l);
-      return theta;
+  Coordinates(float argx, float argy, float argz)
+  {
+    x = argx;
+    y = argy;
+    z = argz;
+  }
+  Coordinates(float theta, float phi)
+  {
+    if (!checkThetaAndPhi(theta, phi))
+    {
+      Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+      x = 0;
+      y = 0;
+      z = 1;
+      return;
     }
 
-    float Phi() {
-      float ll = x * x + y * y + z * z;
-      float l = sqrt(ll);
-      float phi = atan2(y, x);
-      return phi;
-    }
+    x = sin(theta) * cos(phi);
+    y = sin(theta) * sin(phi);
+    z = cos(theta);
   }
 
-class QuantumState {
-  private:
+  float theta()
+  {
+    float ll = x * x + y * y + z * z;
+    float l = sqrt(ll);
+    float theta = acos(z / l);
+    return theta;
+  }
+
+  float phi()
+  {
+    float phi = atan2(y, x);
+    return phi;
+  }
+
+  void set(float argx, float argy, float argz)
+  {
+    x = argx;
+    y = argy;
+    z = argz;
+  }
+
+  void set(float theta, float phi)
+  {
+    if (!checkThetaAndPhi(theta, phi))
+    {
+      Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+      x = 0;
+      y = 0;
+      z = 1;
+      return;
+    }
+
+    x = sin(theta) * cos(phi);
+    y = sin(theta) * sin(phi);
+    z = cos(theta);
+  }
+};
+
+class QuantumState
+{
+private:
   Coordinates stateCoordinates;
-  public:
-  QuantumState(Coordinates argStateCoordinates) {
-    stateCoordinates = argStateCoordinates;
+
+public:
+  QuantumState(Coordinates argStateCoordinates) : stateCoordinates(argStateCoordinates) {}
+  QuantumState() : stateCoordinates(0, 0, 1) {}
+
+  void setCoordinates(Coordinates argStateCoordinates)
+  {
+    stateCoordinates.set(argStateCoordinates.x, argStateCoordinates.y, argStateCoordinates.z);
   }
-  QuantumState() {
-    stateCoordinates = Coordinates(0, 0, 1);
+
+  int collapse()
+  {
+    const float theta = stateCoordinates.theta();
+    const float a = cos(theta / 2);
+    const bool is1 = random(0, 100) < a * a * 100;
+    this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
+    return is1 ? 1 : 0;
   }
-}
+};
 
 class Qbead {
 public:
