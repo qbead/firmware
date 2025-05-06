@@ -130,6 +130,8 @@ public:
       z = 1;
       return;
     }
+    theta = theta*M_PI/180;
+    phi = phi*M_PI/180;
 
     x = sin(theta) * cos(phi);
     y = sin(theta) * sin(phi);
@@ -141,12 +143,14 @@ public:
     float ll = x * x + y * y + z * z;
     float l = sqrt(ll);
     float theta = acos(z / l);
-    return theta;
+    return theta*180/M_PI;
   }
 
   float phi()
   {
     float phi = atan2(y, x);
+    phi = phi*180/M_PI;
+    if (phi<0) {phi+=360;}// to bring it to [0,360] range
     return phi;
   }
 
@@ -167,6 +171,8 @@ public:
       z = 1;
       return;
     }
+    theta = theta*M_PI/180;
+    phi = phi*M_PI/180;
 
     x = sin(theta) * cos(phi);
     y = sin(theta) * sin(phi);
