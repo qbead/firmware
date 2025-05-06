@@ -130,6 +130,8 @@ public:
       z = 1;
       return;
     }
+    theta = theta*M_PI/180;
+    phi = phi*M_PI/180;
 
     x = sin(theta) * cos(phi);
     y = sin(theta) * sin(phi);
@@ -141,12 +143,14 @@ public:
     float ll = x * x + y * y + z * z;
     float l = sqrt(ll);
     float theta = acos(z / l);
-    return theta;
+    return theta*180/M_PI;
   }
 
   float phi()
   {
     float phi = atan2(y, x);
+    phi = phi*180/M_PI;
+    if (phi<0) {phi+=360;}// to bring it to [0,360] range
     return phi;
   }
 
@@ -167,7 +171,8 @@ public:
       z = 1;
       return;
     }
-
+    theta = theta*M_PI/180;
+    phi = phi*M_PI/180;
     x = sin(theta) * cos(phi);
     y = sin(theta) * sin(phi);
     z = cos(theta);
@@ -188,6 +193,11 @@ public:
     stateCoordinates.set(argStateCoordinates.x, argStateCoordinates.y, argStateCoordinates.z);
   }
 
+  Coordinates getCoordinates()
+  {
+    return stateCoordinates;
+  }
+
   int collapse()
   {
     const float theta = stateCoordinates.theta();
@@ -196,6 +206,40 @@ public:
     this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
     return is1 ? 1 : 0;
   }
+
+  void gateX()
+  {
+    float rotatedTheta = 180 - stateCoordinates.theta();
+    float rotatedPhi = 360 - stateCoordinates.phi();
+    stateCoordinates.set(rotatedTheta, rotatedPhi);
+  }
+
+  void gateZ()
+  {
+    float rotatedPhi = 180 - stateCoordinates.phi();
+    if (rotatedPhi < 0)
+    {
+      rotatedPhi += 360;
+    }
+    stateCoordinates.set(stateCoordinates.theta(), rotatedPhi);
+  }
+
+  void gateY()
+  {
+    float rotatedTheta = 180 - stateCoordinates.theta();
+    float rotatedPhi = 180 - stateCoordinates.phi();
+    if (rotatedPhi < 0)
+    {
+      rotatedPhi += 360;
+    }
+    stateCoordinates.set(rotatedTheta, rotatedPhi);
+  }
+
+  void gateH()
+  {
+    stateCoordinates.set(stateCoordinates.z, stateCoordinates.y, stateCoordinates.x); //flip x and z axis
+  }
+
 };
 
 class Qbead {
