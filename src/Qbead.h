@@ -233,6 +233,10 @@ public:
     pixels.show();
   }
 
+  void setBrightness(uint8_t b) {
+    pixels.setBrightness(b);
+  }
+
   void setLegPixelColor(int leg, int pixel, uint32_t color) {
     leg = nlegs - leg - 3; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
     leg = leg % nlegs;
@@ -248,10 +252,6 @@ public:
     } else {
       pixels.setPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1, color);
     }
-  }
-
-  void setBrightness(uint8_t b) {
-    pixels.setBrightness(b);
   }
 
   // Single bit is lit up on the Bloch sphere  
