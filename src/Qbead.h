@@ -234,8 +234,11 @@ public:
   }
 
   void setLegPixelColor(int leg, int pixel, uint32_t color) {
-    leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
+    leg = nlegs - leg - 3; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
     leg = leg % nlegs;
+    if (leg < 0){          // Starting again at 0, due to shifting 3 legs to calibrate to the middle
+      leg += 12;
+    }
     if (leg == 0) {
       pixels.setPixelColor(pixel, color);
     } else if (pixel == 0) {
@@ -251,23 +254,25 @@ public:
     pixels.setBrightness(b);
   }
 
+  // Single bit is lit up on the Bloch sphere  
   void setBloch_deg(float theta, float phi, uint32_t color) {
     if (!checkThetaAndPhi(theta, phi)) return;
     float theta_section = theta / theta_quant;
+    float phi_leg = phi / phi_quant;
     if (theta_section < 0.5) {
-      setLegPixelColor(0, 0, color);
-    } else if (theta_section > nsections - 0.5) {
       setLegPixelColor(0, nsections, color);
+    } else if (theta_section > nsections - 0.5) {
+      setLegPixelColor(0, 0, color);
     } else {
-      float phi_leg = phi / phi_quant;
-      int theta_int = theta_section + 0.5;
-      theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
-      int phi_int = phi_leg + 0.5;
-      phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+      int theta_int = nsections - theta_section + 0.5;
+      theta_int = theta_int > nsections - 0.5 ? nsections - 0.5 : theta_int; // to avoid precision issues near the end of the range
+      int phi_int = nlegs - phi_leg + 0.5;
+      phi_int = phi_int > nlegs - 0.5 ? 0 : phi_int;
       setLegPixelColor(phi_int, theta_int, color);
     }
   }
 
+  // Smooth transition between two pixels on the Bloch sphere
   void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
     if (!checkThetaAndPhi(theta, phi)) return;
     float theta_section = theta / theta_quant;
