@@ -10,7 +10,7 @@
 #include <bluefruit.h>
 
 // default configs
-#define QB_LEDPIN 0
+#define QB_LEDPIN 10
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
 #define QB_NSECTIONS 6
 #define QB_NLEGS 12
@@ -107,7 +107,168 @@ void connect_callback(uint16_t conn_handle)
   Serial.println(central_name);
 }
 
+void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
+{
+  if (!checkThetaAndPhi(theta, phi))
+  {
+    Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+    x = 0;
+    y = 0;
+    z = 1;
+    return;
+  }
+
+  theta = theta*M_PI/180;
+  phi = phi*M_PI/180;
+
+  x = round(sin(theta) * cos(phi) * 1000) / 1000;
+  y = round(sin(theta) * sin(phi) * 1000) / 1000;
+  z = round(cos(theta) * 1000) / 1000;
+}
+
 namespace Qbead {
+
+class Coordinates
+{
+public:
+  float x, y, z;
+
+  Coordinates(float argx, float argy, float argz)
+  {
+    x = argx;
+    y = argy;
+    z = argz;
+  }
+  Coordinates(float theta, float phi)
+  {
+    sphericalToCartesian(theta, phi, x, y, z);
+  }
+
+  float theta()
+  {
+    float ll = x * x + y * y + z * z;
+    float l = sqrt(ll);
+    float theta = acos(z / l);
+    return theta;
+  }
+
+  float phi()
+  {
+    float phi = atan2(y, x);
+    return phi;
+  }
+
+  void set(float argx, float argy, float argz)
+  {
+    x = argx;
+    y = argy;
+    z = argz;
+  }
+
+  void set(float theta, float phi)
+  {
+    sphericalToCartesian(theta, phi, x, y, z);
+  }
+
+  // Using Rodrigues' rotation formula to rotate the coordinates
+  Coordinates rotateRelativeTo(const Coordinates& other)
+  {
+    // Simplified: cross product of `other` with (0, 0, 1)
+    float ax = other.y;
+    float ay = -other.x;
+    float az = 0;
+
+    float r = sqrt(ax * ax + ay * ay + az * az);
+
+    // If already aligned with (0, 0, 1), no rotation needed
+    if (r == 0)
+      return *this;
+
+    // Normalize axis
+    ax /= r;
+    ay /= r;
+    az /= r;
+
+    // Compute angle between other and (0, 0, 1)
+    float angle = acos(other.z);
+
+    // Rodrigues' rotation formula
+    float ux = ax, uy = ay, uz = az;
+    float cosA = cos(angle);
+    float sinA = sin(angle);
+
+    float newX = (cosA + (1 - cosA) * ux * ux) * x +
+                 ((1 - cosA) * ux * uy - uz * sinA) * y +
+                 ((1 - cosA) * ux * uz + uy * sinA) * z;
+
+    float newY = ((1 - cosA) * uy * ux + uz * sinA) * x +
+                 (cosA + (1 - cosA) * uy * uy) * y +
+                 ((1 - cosA) * uy * uz - ux * sinA) * z;
+
+    float newZ = ((1 - cosA) * uz * ux - uy * sinA) * x +
+                 ((1 - cosA) * uz * uy + ux * sinA) * y +
+                 (cosA + (1 - cosA) * uz * uz) * z;
+
+    return Coordinates(newX, newY, newZ);
+  }
+};
+
+class QuantumState
+{
+private:
+  Coordinates stateCoordinates;
+
+public:
+  QuantumState(Coordinates argStateCoordinates) : stateCoordinates(argStateCoordinates) {}
+  QuantumState() : stateCoordinates(0, 0, 1) {}
+
+  void setCoordinates(Coordinates argStateCoordinates)
+  {
+    stateCoordinates.set(argStateCoordinates.x, argStateCoordinates.y, argStateCoordinates.z);
+  }
+
+  int collapse()
+  {
+    const float theta = stateCoordinates.theta();
+    const float a = cos(theta / 2);
+    const bool is1 = random(0, 100) < a * a * 100;
+    this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
+    return is1 ? 1 : 0;
+  }
+
+  void gateX()
+  {
+    float rotatedTheta = 180 - stateCoordinates.theta();
+    float rotatedPhi = 360 - stateCoordinates.phi();
+    stateCoordinates.set(rotatedTheta, rotatedPhi);
+  }
+
+  void gateZ()
+  {
+    float rotatedPhi = 180 - stateCoordinates.phi();
+    if (rotatedPhi < 0)
+    {
+      rotatedPhi += 360;
+    }
+    stateCoordinates.set(stateCoordinates.theta(), rotatedPhi);
+  }
+
+  void gateY()
+  {
+    float rotatedTheta = 180 - stateCoordinates.theta();
+    float rotatedPhi = 180 - stateCoordinates.phi();
+    if (rotatedPhi < 0)
+    {
+      rotatedPhi += 360;
+    }
+    stateCoordinates.set(rotatedTheta, rotatedPhi);
+  }
+
+  void gateH()
+  {
+    stateCoordinates.set(stateCoordinates.z, stateCoordinates.y, stateCoordinates.x); //flip x and z axis
+  }
+};
 
 class Qbead {
 public:
@@ -249,6 +410,13 @@ public:
 
   void setBrightness(uint8_t b) {
     pixels.setBrightness(b);
+  }
+
+  Coordinates getCoordinatesAdjustedForGravity() {
+    return Coordinates(x, y, z);
+  }
+
+  void setLed(state: QuantumState, color: uint32_t) {
   }
 
   void setBloch_deg(float theta, float phi, uint32_t color) {
