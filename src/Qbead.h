@@ -133,9 +133,9 @@ public:
     theta = theta*M_PI/180;
     phi = phi*M_PI/180;
 
-    x = sin(theta) * cos(phi);
-    y = sin(theta) * sin(phi);
-    z = cos(theta);
+    x = round(sin(theta) * cos(phi) * 1000) / 1000;
+    y = round(sin(theta) * sin(phi) * 1000) / 1000;
+    z = round(cos(theta) * 1000) / 1000;
   }
 
   float theta()
@@ -174,9 +174,9 @@ public:
     theta = theta*M_PI/180;
     phi = phi*M_PI/180;
 
-    x = sin(theta) * cos(phi);
-    y = sin(theta) * sin(phi);
-    z = cos(theta);
+    x = round(sin(theta) * cos(phi) * 1000) / 1000;
+    y = round(sin(theta) * sin(phi) * 1000) / 1000;
+    z = round(cos(theta) * 1000) / 1000;
   }
 };
 
