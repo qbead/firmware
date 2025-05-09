@@ -10,7 +10,7 @@
 #include <bluefruit.h>
 
 // default configs
-#define QB_LEDPIN 0
+#define QB_LEDPIN 10
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
 #define QB_NSECTIONS 6
 #define QB_NLEGS 12
@@ -161,7 +161,7 @@ public:
   const bool sx, sy, sz;
   float rbuffer[3], rgyrobuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
-  float xGyro, yGyro, zGyro, rxGyro, ryGyro, rzGyro // filtered and raw gyro measurements, in units of deg/s
+  float xGyro, yGyro, zGyro, rxGyro, ryGyro, rzGyro; // filtered and raw gyro measurements, in units of deg/s
   float t_acc, p_acc;        // theta and phi according to gravity
   float T_imu;             // last update from the IMU
 
