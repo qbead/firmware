@@ -10,7 +10,7 @@
 #include <bluefruit.h>
 
 // default configs
-#define QB_LEDPIN 0
+#define QB_LEDPIN 10
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
 #define QB_NSECTIONS 6
 #define QB_NLEGS 12
@@ -109,7 +109,188 @@ void connect_callback(uint16_t conn_handle)
   Serial.println(central_name);
 }
 
+// theta in rads
+// phi in rads
+void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
+{
+  if (!checkThetaAndPhi(theta * 180 / PI, phi * 180 / PI))
+  {
+    Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+    x = 0;
+    y = 0;
+    z = 1;
+    return;
+  }
+
+  x = round(sin(theta) * cos(phi) * 1000) / 1000;
+  y = round(sin(theta) * sin(phi) * 1000) / 1000;
+  z = round(cos(theta) * 1000) / 1000;
+}
+
 namespace Qbead {
+
+class Coordinates
+{
+public:
+  float x, y, z;
+
+  Coordinates(float argx, float argy, float argz)
+  {
+    float ll = argx * argx + argy * argy + argz * argz;
+    float l = sqrt(ll);
+    x = argx / l;
+    y = argy / l;
+    z = argz / l;
+  }
+
+  // In rads
+  Coordinates(float theta, float phi)
+  {
+    if (!checkThetaAndPhi(theta, phi))
+    {
+      Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+      x = 0;
+      y = 0;
+      z = 1;
+      return;
+    }
+  
+    x = sin(theta) * cos(phi);
+    y = sin(theta) * sin(phi);
+    z = cos(theta);
+  }
+
+  // In rads
+  float theta()
+  {
+    float ll = x * x + y * y + z * z;
+    float l = sqrt(ll);
+    float theta = acos(z / l);
+    return theta;
+  }
+
+  // In rads
+  float phi()
+  {
+    float phi = atan2(y, x);
+    return phi;
+  }
+
+  float dist(const Coordinates other) const
+  {
+    float dx = x - other.x;
+    float dy = y - other.y;
+    float dz = z - other.z;
+    return sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  void set(float argx, float argy, float argz)
+  {
+    x = argx;
+    y = argy;
+    z = argz;
+  }
+
+  // in rads
+  void set(float theta, float phi)
+  {
+    sphericalToCartesian(theta, phi, x, y, z);
+  }
+
+  // Using Rodrigues' rotation formula to rotate the coordinates
+  Coordinates rotateRelativeTo(const Coordinates& other)
+  {
+    // Simplified: cross product of `other` with (0, 0, 1)
+    float ax = other.y;
+    float ay = -other.x;
+    float az = 0;
+
+    float r = sqrt(ax * ax + ay * ay + az * az);
+
+    // If already aligned with (0, 0, -1), no rotation needed
+    if (r == 0)
+      return *this;
+
+    // Normalize axis
+    ax /= r;
+    ay /= r;
+    az /= r;
+
+    // Compute angle between other and (0, 0, -1)
+    float angle = acos(-other.z);
+
+    // Rodrigues' rotation formula
+    float cosA = cos(angle);
+    float sinA = sin(angle);
+
+    float newX = (cosA + (1 - cosA) * ax * ax) * x +
+                 ((1 - cosA) * ax * ay - az * sinA) * y +
+                 ((1 - cosA) * ax * az + ay * sinA) * z;
+
+    float newY = ((1 - cosA) * ay * ax + az * sinA) * x +
+                 (cosA + (1 - cosA) * ay * ay) * y +
+                 ((1 - cosA) * ay * az - ax * sinA) * z;
+
+    float newZ = ((1 - cosA) * az * ax - ay * sinA) * x +
+                 ((1 - cosA) * az * ay + ax * sinA) * y +
+                 (cosA + (1 - cosA) * az * az) * z;
+
+    return Coordinates(newX, newY, newZ);
+  }
+};
+
+class QuantumState
+{
+private:
+  Coordinates stateCoordinates;
+
+public:
+  QuantumState(Coordinates argStateCoordinates) : stateCoordinates(argStateCoordinates) {}
+  QuantumState() : stateCoordinates(0, 0, 1) {}
+
+  void setCoordinates(Coordinates argStateCoordinates)
+  {
+    stateCoordinates.set(argStateCoordinates.x, argStateCoordinates.y, argStateCoordinates.z);
+  }
+
+  Coordinates getCoordinates()
+  {
+    return stateCoordinates;
+  }
+
+  int collapse()
+  {
+    const float theta = stateCoordinates.theta();
+    const float a = cos(theta / 2);
+    const bool is1 = random(0, 100) < a * a * 100;
+    this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
+    return is1 ? 1 : 0;
+  }
+
+  // Rotate PI around the x axis
+  void gateX()
+  {
+    stateCoordinates.set(stateCoordinates.x, -stateCoordinates.y, -stateCoordinates.z);
+  }
+
+  // Rotate PI around the y axis
+  void gateZ()
+  {
+    stateCoordinates.set(-stateCoordinates.x, -stateCoordinates.y, stateCoordinates.z);
+  }
+
+  // Rotate PI around the z axis
+  void gateY()
+  {
+    stateCoordinates.set(-stateCoordinates.x, stateCoordinates.y, -stateCoordinates.z);
+  }
+
+  // Rotate PI around the xz axis
+  void gateH()
+  {
+    stateCoordinates.set(stateCoordinates.z, stateCoordinates.y, stateCoordinates.x); //flip x and z axis
+  }
+};
 
 class Qbead {
 public:
@@ -162,6 +343,72 @@ public:
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
+
+  // led map index to Coordinates
+  Coordinates led_map_v1[62] = {
+    Coordinates(0, 0),
+    Coordinates(PI / 6, 9 * PI / 6),
+    Coordinates(2 * PI / 6, 9 * PI / 6),
+    Coordinates(3 * PI / 6, 9 * PI / 6),
+    Coordinates(4 * PI / 6, 9 * PI / 6),
+    Coordinates(5 * PI / 6, 9 * PI / 6),
+    Coordinates(PI, 0),
+    Coordinates(PI / 6, 10 * PI / 6),
+    Coordinates(2 * PI / 6, 10 * PI / 6),
+    Coordinates(3 * PI / 6, 10 * PI / 6),
+    Coordinates(4 * PI / 6, 10 * PI / 6),
+    Coordinates(5 * PI / 6, 10 * PI / 6),
+    Coordinates(PI / 6, 11 * PI / 6),
+    Coordinates(2 * PI / 6, 11 * PI / 6),
+    Coordinates(3 * PI / 6, 11 * PI / 6),
+    Coordinates(4 * PI / 6, 11 * PI / 6),
+    Coordinates(5 * PI / 6, 11 * PI / 6),
+    Coordinates(PI / 6, 0),
+    Coordinates(2 * PI / 6, 0),
+    Coordinates(3 * PI / 6, 0),
+    Coordinates(4 * PI / 6, 0),
+    Coordinates(5 * PI / 6, 0),
+    Coordinates(PI / 6, PI / 6),
+    Coordinates(2 * PI / 6, PI / 6),
+    Coordinates(3 * PI / 6, PI / 6),
+    Coordinates(4 * PI / 6, PI / 6),
+    Coordinates(5 * PI / 6, PI / 6),
+    Coordinates(PI / 6, 2 * PI / 6),
+    Coordinates(2 * PI / 6, 2 * PI / 6),
+    Coordinates(3 * PI / 6, 2 * PI / 6),
+    Coordinates(4 * PI / 6, 2 * PI / 6),
+    Coordinates(5 * PI / 6, 2 * PI / 6),
+    Coordinates(PI / 6, 3 * PI / 6),
+    Coordinates(2 * PI / 6, 3 * PI / 6),
+    Coordinates(3 * PI / 6, 3 * PI / 6),
+    Coordinates(4 * PI / 6, 3 * PI / 6),
+    Coordinates(5 * PI / 6, 3 * PI / 6),
+    Coordinates(PI / 6, 4 * PI / 6),
+    Coordinates(2 * PI / 6, 4 * PI / 6),
+    Coordinates(3 * PI / 6, 4 * PI / 6),
+    Coordinates(4 * PI / 6, 4 * PI / 6),
+    Coordinates(5 * PI / 6, 4 * PI / 6),
+    Coordinates(PI / 6, 5 * PI / 6),
+    Coordinates(2 * PI / 6, 5 * PI / 6),
+    Coordinates(3 * PI / 6, 5 * PI / 6),
+    Coordinates(4 * PI / 6, 5 * PI / 6),
+    Coordinates(5 * PI / 6, 5 * PI / 6),
+    Coordinates(PI / 6, 6 * PI / 6),
+    Coordinates(2 * PI / 6, 6 * PI / 6),
+    Coordinates(3 * PI / 6, 6 * PI / 6),
+    Coordinates(4 * PI / 6, 6 * PI / 6),
+    Coordinates(5 * PI / 6, 6 * PI / 6),
+    Coordinates(PI / 6, 7 * PI / 6),
+    Coordinates(2 * PI / 6, 7 * PI / 6),
+    Coordinates(3 * PI / 6, 7 * PI / 6),
+    Coordinates(4 * PI / 6, 7 * PI / 6),
+    Coordinates(5 * PI / 6, 7 * PI / 6),
+    Coordinates(PI / 6, 8 * PI / 6),
+    Coordinates(2 * PI / 6, 8 * PI / 6),
+    Coordinates(3 * PI / 6, 8 * PI / 6),
+    Coordinates(4 * PI / 6, 8 * PI / 6),
+    Coordinates(5 * PI / 6, 8 * PI / 6),
+  };
 
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
     Serial.println("[INFO]{BLE} Received a write on the color characteristic");
@@ -236,8 +483,11 @@ public:
   }
 
   void setLegPixelColor(int leg, int pixel, uint32_t color) {
-    leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
+    leg = nlegs - leg - 3; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
     leg = leg % nlegs;
+    if (leg < 0){          // Starting again at 0, due to shifting 3 legs to calibrate to the middle
+      leg += 12;
+    }
     if (leg == 0) {
       pixels.setPixelColor(pixel, color);
     } else if (pixel == 0) {
@@ -253,41 +503,74 @@ public:
     pixels.setBrightness(b);
   }
 
-  void setBloch_deg(float theta, float phi, uint32_t color) {
-    if (!checkThetaAndPhi(theta, phi)) return;
-    float theta_section = theta / theta_quant;
-    if (theta_section < 0.5) {
-      setLegPixelColor(0, 0, color);
-    } else if (theta_section > nsections - 0.5) {
-      setLegPixelColor(0, nsections, color);
+  Coordinates getCoordinatesAdjustedForGravity(Coordinates c) {
+    Coordinates adjusted = c.rotateRelativeTo(Coordinates(x, y, z));
+    return adjusted;
+  }
+
+  void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
+    Coordinates adjusted = getCoordinatesAdjustedForGravity(coordinates);
+    float theta = adjusted.theta() * 180 / PI;
+    float phi = adjusted.phi() * 180 / PI;
+    if (phi < 0) {
+      phi += 360;
+    }
+    setBloch_deg(theta, phi, color, smooth);
+  }
+
+  void showAxis() {
+    setLed(Coordinates(0, 0, 1), color(255, 0, 0));
+    setLed(Coordinates(0, 0, -1), color(255, 0, 0));
+    setLed(Coordinates(0, 1, 0), color(0, 255, 0));
+    setLed(Coordinates(0, -1, 0), color(0, 255, 0));
+    setLed(Coordinates(1, 0, 0), color(0, 0, 255));
+    setLed(Coordinates(-1, 0, 0), color(0, 0, 255));
+  }
+
+  // in rads
+  float getDistToLed(float theta, float phi, int index) {
+    const Coordinates led = led_map_v1[index];
+    const Coordinates reference(theta, phi);
+    return led.dist(reference);
+  }
+
+  // Single bit is lit up on the Bloch sphere  
+  void setBloch_deg(float theta, float phi, uint32_t c, bool smooth = false) {
+    int closest_index = -1;
+    float closest_dist = 1000;
+    int second_closest_index = -1;
+    float second_closest_dist = 1000;
+    for (int i = 0; i < 62; i++) {
+      float dist = getDistToLed(theta * PI / 180, phi * PI / 180, i);
+      if (dist < closest_dist) {
+        second_closest_index = closest_index;
+        second_closest_dist = closest_dist;
+        closest_index = i;
+        closest_dist = dist;
+      } else if (dist < second_closest_dist) {
+        second_closest_index = i;
+        second_closest_dist = dist;
+      }
+    }
+    if (smooth) {
+      float dist1 = getDistToLed(theta * PI / 180, phi * PI / 180, closest_index);
+      float dist2 = getDistToLed(theta * PI / 180, phi * PI / 180, second_closest_index);
+      float ratio1 = dist1 / (dist1 + dist2);
+      float ratio2 = dist2 / (dist1 + dist2);
+      uint8_t r = redch(c);
+      uint8_t g = greench(c);
+      uint8_t b = bluech(c);
+      float p1 = ratio1 * ratio1;
+      float p2 = ratio2 * ratio2;
+      pixels.setPixelColor(closest_index, color(p2 * r, p2 * g, p2 * b));
+      pixels.setPixelColor(second_closest_index, color(p1 * r, p1 * g, p1 * b));
     } else {
-      int theta_int = min(nsections - 1, round(theta_section)); // to avoid precision issues near the end of the range
-      int phi_int = round(phi / phi_quant);
-      phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
-      setLegPixelColor(phi_int, theta_int, color);
+      pixels.setPixelColor(closest_index, c);
     }
   }
 
   void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
-    if (!checkThetaAndPhi(theta, phi)) return;
-    float theta_section = theta / theta_quant;
-    int theta_int = min(nsections - 1, round(theta_section)); // to avoid precision issues near the end of the range
-    int phi_int = round(phi / phi_quant);
-    phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
-
-    float p = (theta_section - theta_int);
-    int theta_direction = sign(p);
-    p = abs(p);
-    float q = 1 - p;
-    p = p * p;
-    q = q * q;
-
-    uint8_t rc = redch(c);
-    uint8_t bc = bluech(c);
-    uint8_t gc = greench(c);
-
-    setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
-    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
+    setBloch_deg(theta, phi, c, true);
   }
 
   void readIMU(bool print=true) {
