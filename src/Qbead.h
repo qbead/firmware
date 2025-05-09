@@ -107,6 +107,8 @@ void connect_callback(uint16_t conn_handle)
   Serial.println(central_name);
 }
 
+// theta in rads
+// phi in rads
 void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
 {
   if (!checkThetaAndPhi(theta, phi))
@@ -117,9 +119,6 @@ void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
     z = 1;
     return;
   }
-
-  theta = theta*M_PI/180;
-  phi = phi*M_PI/180;
 
   x = round(sin(theta) * cos(phi) * 1000) / 1000;
   y = round(sin(theta) * sin(phi) * 1000) / 1000;
@@ -135,15 +134,19 @@ public:
 
   Coordinates(float argx, float argy, float argz)
   {
-    x = argx;
-    y = argy;
-    z = argz;
+    float ll = argx * argx + argy * argy + argz * argz;
+    float l = sqrt(ll);
+    x = argx / l;
+    y = argy / l;
+    z = argz / l;
   }
+
   Coordinates(float theta, float phi)
   {
     sphericalToCartesian(theta, phi, x, y, z);
   }
 
+  // In rads
   float theta()
   {
     float ll = x * x + y * y + z * z;
@@ -152,6 +155,7 @@ public:
     return theta;
   }
 
+  // In rads
   float phi()
   {
     float phi = atan2(y, x);
@@ -165,6 +169,7 @@ public:
     z = argz;
   }
 
+  // in rads
   void set(float theta, float phi)
   {
     sphericalToCartesian(theta, phi, x, y, z);
@@ -180,7 +185,7 @@ public:
 
     float r = sqrt(ax * ax + ay * ay + az * az);
 
-    // If already aligned with (0, 0, 1), no rotation needed
+    // If already aligned with (0, 0, -1), no rotation needed
     if (r == 0)
       return *this;
 
@@ -189,25 +194,24 @@ public:
     ay /= r;
     az /= r;
 
-    // Compute angle between other and (0, 0, 1)
-    float angle = acos(other.z);
+    // Compute angle between other and (0, 0, -1)
+    float angle = acos(-other.z);
 
     // Rodrigues' rotation formula
-    float ux = ax, uy = ay, uz = az;
     float cosA = cos(angle);
     float sinA = sin(angle);
 
-    float newX = (cosA + (1 - cosA) * ux * ux) * x +
-                 ((1 - cosA) * ux * uy - uz * sinA) * y +
-                 ((1 - cosA) * ux * uz + uy * sinA) * z;
+    float newX = (cosA + (1 - cosA) * ax * ax) * x +
+                 ((1 - cosA) * ax * ay - az * sinA) * y +
+                 ((1 - cosA) * ax * az + ay * sinA) * z;
 
-    float newY = ((1 - cosA) * uy * ux + uz * sinA) * x +
-                 (cosA + (1 - cosA) * uy * uy) * y +
-                 ((1 - cosA) * uy * uz - ux * sinA) * z;
+    float newY = ((1 - cosA) * ay * ax + az * sinA) * x +
+                 (cosA + (1 - cosA) * ay * ay) * y +
+                 ((1 - cosA) * ay * az - ax * sinA) * z;
 
-    float newZ = ((1 - cosA) * uz * ux - uy * sinA) * x +
-                 ((1 - cosA) * uz * uy + ux * sinA) * y +
-                 (cosA + (1 - cosA) * uz * uz) * z;
+    float newZ = ((1 - cosA) * az * ax - ay * sinA) * x +
+                 ((1 - cosA) * az * ay + ax * sinA) * y +
+                 (cosA + (1 - cosA) * az * az) * z;
 
     return Coordinates(newX, newY, newZ);
   }
@@ -241,34 +245,25 @@ public:
     return is1 ? 1 : 0;
   }
 
+  // Rotate PI around the x axis
   void gateX()
   {
-    float rotatedTheta = 180 - stateCoordinates.theta();
-    float rotatedPhi = 360 - stateCoordinates.phi();
-    stateCoordinates.set(rotatedTheta, rotatedPhi);
+    stateCoordinates.set(stateCoordinates.x, -stateCoordinates.y, -stateCoordinates.z);
   }
 
+  // Rotate PI around the y axis
   void gateZ()
   {
-    float rotatedPhi = 180 - stateCoordinates.phi();
-    if (rotatedPhi < 0)
-    {
-      rotatedPhi += 360;
-    }
-    stateCoordinates.set(stateCoordinates.theta(), rotatedPhi);
+    stateCoordinates.set(-stateCoordinates.x, -stateCoordinates.y, stateCoordinates.z);
   }
 
+  // Rotate PI around the z axis
   void gateY()
   {
-    float rotatedTheta = 180 - stateCoordinates.theta();
-    float rotatedPhi = 180 - stateCoordinates.phi();
-    if (rotatedPhi < 0)
-    {
-      rotatedPhi += 360;
-    }
-    stateCoordinates.set(rotatedTheta, rotatedPhi);
+    stateCoordinates.set(-stateCoordinates.x, stateCoordinates.y, -stateCoordinates.z);
   }
 
+  // Rotate PI around the xz axis
   void gateH()
   {
     stateCoordinates.set(stateCoordinates.z, stateCoordinates.y, stateCoordinates.x); //flip x and z axis
@@ -400,8 +395,11 @@ public:
   }
 
   void setLegPixelColor(int leg, int pixel, uint32_t color) {
-    leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
+    leg = nlegs - leg - 3; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
     leg = leg % nlegs;
+    if (leg < 0){          // Starting again at 0, due to shifting 3 legs to calibrate to the middle
+      leg += 12;
+    }
     if (leg == 0) {
       pixels.setPixelColor(pixel, color);
     } else if (pixel == 0) {
@@ -424,12 +422,15 @@ public:
 
   void setLed(QuantumState state, uint32_t color) {
     Coordinates adjusted = getCoordinatesAdjustedForGravity(state.getCoordinates());
-    float theta = adjusted.theta();
-    float phi = adjusted.phi();
+    float theta = adjusted.theta() * 180 / PI;
+    float phi = adjusted.phi() * 180 / PI;
+    if (phi < 0) {
+      phi += 360;
+    }
     setBloch_deg(theta, phi, color);
   }
 
-  void setAxis() {
+  void showAxis() {
     setLed(QuantumState(Coordinates(0, 0, 1)), color(255, 0, 0));
     setLed(QuantumState(Coordinates(0, 0, -1)), color(255, 0, 0));
     setLed(QuantumState(Coordinates(0, 1, 0)), color(0, 255, 0));
@@ -438,23 +439,25 @@ public:
     setLed(QuantumState(Coordinates(-1, 0, 0)), color(0, 0, 255));
   }
 
+  // Single bit is lit up on the Bloch sphere  
   void setBloch_deg(float theta, float phi, uint32_t color) {
     if (!checkThetaAndPhi(theta, phi)) return;
     float theta_section = theta / theta_quant;
+    float phi_leg = phi / phi_quant;
     if (theta_section < 0.5) {
-      setLegPixelColor(0, 0, color);
-    } else if (theta_section > nsections - 0.5) {
       setLegPixelColor(0, nsections, color);
+    } else if (theta_section > nsections - 0.5) {
+      setLegPixelColor(0, 0, color);
     } else {
-      float phi_leg = phi / phi_quant;
-      int theta_int = theta_section + 0.5;
-      theta_int = theta_int > nsections - 1 ? nsections - 1 : theta_int; // to avoid precision issues near the end of the range
-      int phi_int = phi_leg + 0.5;
-      phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+      int theta_int = nsections - theta_section + 0.5;
+      theta_int = theta_int > nsections - 0.5 ? nsections - 0.5 : theta_int; // to avoid precision issues near the end of the range
+      int phi_int = nlegs - phi_leg + 0.5;
+      phi_int = phi_int > nlegs - 0.5 ? 0 : phi_int;
       setLegPixelColor(phi_int, theta_int, color);
     }
   }
 
+  // Smooth transition between two pixels on the Bloch sphere
   void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
     if (!checkThetaAndPhi(theta, phi)) return;
     float theta_section = theta / theta_quant;

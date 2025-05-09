@@ -25,6 +25,7 @@ void setup() {
 void loop() {
   bead.readIMU();
   bead.clear();
-  bead.setBloch_deg_smooth(bead.t_acc, bead.p_acc, color(255, 0, 255));
+  bead.showAxis();
+  bead.setBloch_deg(120, 120, color(255, 0, 255));
   bead.show();
 }
