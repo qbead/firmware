@@ -422,8 +422,8 @@ public:
     return adjusted;
   }
 
-  void setLed(QuantumState state, uint32_t color) {
-    Coordinates adjusted = getCoordinatesAdjustedForGravity(state.getCoordinates());
+  void setLed(Coordinates coordinates, uint32_t color) {
+    Coordinates adjusted = getCoordinatesAdjustedForGravity(coordinates);
     float theta = adjusted.theta() * 180 / PI;
     float phi = adjusted.phi() * 180 / PI;
     if (phi < 0) {
@@ -433,12 +433,12 @@ public:
   }
 
   void showAxis() {
-    setLed(QuantumState(Coordinates(0, 0, 1)), color(255, 0, 0));
-    setLed(QuantumState(Coordinates(0, 0, -1)), color(255, 0, 0));
-    setLed(QuantumState(Coordinates(0, 1, 0)), color(0, 255, 0));
-    setLed(QuantumState(Coordinates(0, -1, 0)), color(0, 255, 0));
-    setLed(QuantumState(Coordinates(1, 0, 0)), color(0, 0, 255));
-    setLed(QuantumState(Coordinates(-1, 0, 0)), color(0, 0, 255));
+    setLed(Coordinates(0, 0, 1), color(255, 0, 0));
+    setLed(Coordinates(0, 0, -1), color(255, 0, 0));
+    setLed(Coordinates(0, 1, 0), color(0, 255, 0));
+    setLed(Coordinates(0, -1, 0), color(0, 255, 0));
+    setLed(Coordinates(1, 0, 0), color(0, 0, 255));
+    setLed(Coordinates(-1, 0, 0), color(0, 0, 255));
   }
 
   // Single bit is lit up on the Bloch sphere  
