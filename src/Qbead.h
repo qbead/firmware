@@ -113,7 +113,7 @@ void connect_callback(uint16_t conn_handle)
 // phi in rads
 void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
 {
-  if (!checkThetaAndPhi(theta, phi))
+  if (!checkThetaAndPhi(theta * 180 / PI, phi * 180 / PI))
   {
     Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
     x = 0;
@@ -143,9 +143,21 @@ public:
     z = argz / l;
   }
 
+  // In rads
   Coordinates(float theta, float phi)
   {
-    sphericalToCartesian(theta, phi, x, y, z);
+    if (!checkThetaAndPhi(theta, phi))
+    {
+      Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+      x = 0;
+      y = 0;
+      z = 1;
+      return;
+    }
+  
+    x = sin(theta) * cos(phi);
+    y = sin(theta) * sin(phi);
+    z = cos(theta);
   }
 
   // In rads
@@ -162,6 +174,14 @@ public:
   {
     float phi = atan2(y, x);
     return phi;
+  }
+
+  float dist(const Coordinates other) const
+  {
+    float dx = x - other.x;
+    float dy = y - other.y;
+    float dz = z - other.z;
+    return sqrt(dx * dx + dy * dy + dz * dz);
   }
 
   void set(float argx, float argy, float argz)
@@ -324,6 +344,72 @@ public:
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
 
+  // led map index to Coordinates
+  Coordinates led_map_v1[62] = {
+    Coordinates(0, 0),
+    Coordinates(PI / 6, 9 * PI / 6),
+    Coordinates(2 * PI / 6, 9 * PI / 6),
+    Coordinates(3 * PI / 6, 9 * PI / 6),
+    Coordinates(4 * PI / 6, 9 * PI / 6),
+    Coordinates(5 * PI / 6, 9 * PI / 6),
+    Coordinates(PI, 0),
+    Coordinates(PI / 6, 10 * PI / 6),
+    Coordinates(2 * PI / 6, 10 * PI / 6),
+    Coordinates(3 * PI / 6, 10 * PI / 6),
+    Coordinates(4 * PI / 6, 10 * PI / 6),
+    Coordinates(5 * PI / 6, 10 * PI / 6),
+    Coordinates(PI / 6, 11 * PI / 6),
+    Coordinates(2 * PI / 6, 11 * PI / 6),
+    Coordinates(3 * PI / 6, 11 * PI / 6),
+    Coordinates(4 * PI / 6, 11 * PI / 6),
+    Coordinates(5 * PI / 6, 11 * PI / 6),
+    Coordinates(PI / 6, 0),
+    Coordinates(2 * PI / 6, 0),
+    Coordinates(3 * PI / 6, 0),
+    Coordinates(4 * PI / 6, 0),
+    Coordinates(5 * PI / 6, 0),
+    Coordinates(PI / 6, PI / 6),
+    Coordinates(2 * PI / 6, PI / 6),
+    Coordinates(3 * PI / 6, PI / 6),
+    Coordinates(4 * PI / 6, PI / 6),
+    Coordinates(5 * PI / 6, PI / 6),
+    Coordinates(PI / 6, 2 * PI / 6),
+    Coordinates(2 * PI / 6, 2 * PI / 6),
+    Coordinates(3 * PI / 6, 2 * PI / 6),
+    Coordinates(4 * PI / 6, 2 * PI / 6),
+    Coordinates(5 * PI / 6, 2 * PI / 6),
+    Coordinates(PI / 6, 3 * PI / 6),
+    Coordinates(2 * PI / 6, 3 * PI / 6),
+    Coordinates(3 * PI / 6, 3 * PI / 6),
+    Coordinates(4 * PI / 6, 3 * PI / 6),
+    Coordinates(5 * PI / 6, 3 * PI / 6),
+    Coordinates(PI / 6, 4 * PI / 6),
+    Coordinates(2 * PI / 6, 4 * PI / 6),
+    Coordinates(3 * PI / 6, 4 * PI / 6),
+    Coordinates(4 * PI / 6, 4 * PI / 6),
+    Coordinates(5 * PI / 6, 4 * PI / 6),
+    Coordinates(PI / 6, 5 * PI / 6),
+    Coordinates(2 * PI / 6, 5 * PI / 6),
+    Coordinates(3 * PI / 6, 5 * PI / 6),
+    Coordinates(4 * PI / 6, 5 * PI / 6),
+    Coordinates(5 * PI / 6, 5 * PI / 6),
+    Coordinates(PI / 6, 6 * PI / 6),
+    Coordinates(2 * PI / 6, 6 * PI / 6),
+    Coordinates(3 * PI / 6, 6 * PI / 6),
+    Coordinates(4 * PI / 6, 6 * PI / 6),
+    Coordinates(5 * PI / 6, 6 * PI / 6),
+    Coordinates(PI / 6, 7 * PI / 6),
+    Coordinates(2 * PI / 6, 7 * PI / 6),
+    Coordinates(3 * PI / 6, 7 * PI / 6),
+    Coordinates(4 * PI / 6, 7 * PI / 6),
+    Coordinates(5 * PI / 6, 7 * PI / 6),
+    Coordinates(PI / 6, 8 * PI / 6),
+    Coordinates(2 * PI / 6, 8 * PI / 6),
+    Coordinates(3 * PI / 6, 8 * PI / 6),
+    Coordinates(4 * PI / 6, 8 * PI / 6),
+    Coordinates(5 * PI / 6, 8 * PI / 6),
+  };
+
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
     Serial.println("[INFO]{BLE} Received a write on the color characteristic");
     singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
@@ -422,14 +508,14 @@ public:
     return adjusted;
   }
 
-  void setLed(Coordinates coordinates, uint32_t color) {
+  void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
     Coordinates adjusted = getCoordinatesAdjustedForGravity(coordinates);
     float theta = adjusted.theta() * 180 / PI;
     float phi = adjusted.phi() * 180 / PI;
     if (phi < 0) {
       phi += 360;
     }
-    setBloch_deg(theta, phi, color);
+    setBloch_deg(theta, phi, color, smooth);
   }
 
   void showAxis() {
@@ -441,44 +527,50 @@ public:
     setLed(Coordinates(-1, 0, 0), color(0, 0, 255));
   }
 
+  // in rads
+  float getDistToLed(float theta, float phi, int index) {
+    const Coordinates led = led_map_v1[index];
+    const Coordinates reference(theta, phi);
+    return led.dist(reference);
+  }
+
   // Single bit is lit up on the Bloch sphere  
-  void setBloch_deg(float theta, float phi, uint32_t color) {
-    if (!checkThetaAndPhi(theta, phi)) return;
-    float theta_section = theta / theta_quant;
-    float phi_leg = round(phi / phi_quant);
-    if (theta_section < 0.5) {
-      setLegPixelColor(0, nsections, color);
-    } else if (theta_section > nsections - 0.5) {
-      setLegPixelColor(0, 0, color);
+  void setBloch_deg(float theta, float phi, uint32_t c, bool smooth = false) {
+    int closest_index = -1;
+    float closest_dist = 1000;
+    int second_closest_index = -1;
+    float second_closest_dist = 1000;
+    for (int i = 0; i < 62; i++) {
+      float dist = getDistToLed(theta * PI / 180, phi * PI / 180, i);
+      if (dist < closest_dist) {
+        second_closest_index = closest_index;
+        second_closest_dist = closest_dist;
+        closest_index = i;
+        closest_dist = dist;
+      } else if (dist < second_closest_dist) {
+        second_closest_index = i;
+        second_closest_dist = dist;
+      }
+    }
+    if (smooth) {
+      float dist1 = getDistToLed(theta * PI / 180, phi * PI / 180, closest_index);
+      float dist2 = getDistToLed(theta * PI / 180, phi * PI / 180, second_closest_index);
+      float ratio1 = dist1 / (dist1 + dist2);
+      float ratio2 = dist2 / (dist1 + dist2);
+      uint8_t r = redch(c);
+      uint8_t g = greench(c);
+      uint8_t b = bluech(c);
+      float p1 = ratio1 * ratio1;
+      float p2 = ratio2 * ratio2;
+      pixels.setPixelColor(closest_index, color(p2 * r, p2 * g, p2 * b));
+      pixels.setPixelColor(second_closest_index, color(p1 * r, p1 * g, p1 * b));
     } else {
-      int theta_int = nsections - theta_section + 0.5;
-      int phi_int = nlegs - phi_leg;
-      phi_int = phi_int >= nlegs ? 0 : phi_int;
-      setLegPixelColor(phi_int, theta_int, color);
+      pixels.setPixelColor(closest_index, c);
     }
   }
 
-  // Smooth transition between two pixels on the Bloch sphere
   void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
-    if (!checkThetaAndPhi(theta, phi)) return;
-    float theta_section = theta / theta_quant;
-    int theta_int = min(nsections - 1, round(theta_section)); // to avoid precision issues near the end of the range
-    int phi_int = round(phi / phi_quant);
-    phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
-
-    float p = (theta_section - theta_int);
-    int theta_direction = sign(p);
-    p = abs(p);
-    float q = 1 - p;
-    p = p * p;
-    q = q * q;
-
-    uint8_t rc = redch(c);
-    uint8_t bc = bluech(c);
-    uint8_t gc = greench(c);
-
-    setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
-    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
+    setBloch_deg(theta, phi, c, true);
   }
 
   void readIMU(bool print=true) {

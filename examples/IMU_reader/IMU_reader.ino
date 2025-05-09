@@ -23,7 +23,7 @@ void setup() {
 }
 
 void loop() {
-  bead.readIMU();
+  bead.readIMU(false);
   bead.clear();
   bead.showAxis();
   bead.setBloch_deg(120, 120, color(255, 0, 255));
