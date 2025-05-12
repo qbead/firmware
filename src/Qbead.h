@@ -345,6 +345,7 @@ public:
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
 
   // led map index to Coordinates
+  // This map is for the first version of the pcb
   Coordinates led_map_v1[62] = {
     Coordinates(0, 0),
     Coordinates(PI / 6, 9 * PI / 6),
@@ -480,23 +481,6 @@ public:
 
   void show() {
     pixels.show();
-  }
-
-  void setLegPixelColor(int leg, int pixel, uint32_t color) {
-    leg = nlegs - leg - 3; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
-    leg = leg % nlegs;
-    if (leg < 0){          // Starting again at 0, due to shifting 3 legs to calibrate to the middle
-      leg += 12;
-    }
-    if (leg == 0) {
-      pixels.setPixelColor(pixel, color);
-    } else if (pixel == 0) {
-      pixels.setPixelColor(0, color);
-    } else if (pixel == 6) {
-      pixels.setPixelColor(6, color);
-    } else {
-      pixels.setPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1, color);
-    }
   }
 
   void setBrightness(uint8_t b) {
