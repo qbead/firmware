@@ -122,9 +122,9 @@ void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
     return;
   }
 
-  x = round(sin(theta) * cos(phi) * 1000) / 1000;
-  y = round(sin(theta) * sin(phi) * 1000) / 1000;
-  z = round(cos(theta) * 1000) / 1000;
+  x = sin(theta) * cos(phi);
+  y = sin(theta) * sin(phi);
+  z = cos(theta);
 }
 
 namespace Qbead {
@@ -146,18 +146,7 @@ public:
   // In rads
   Coordinates(float theta, float phi)
   {
-    if (!checkThetaAndPhi(theta, phi))
-    {
-      Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
-      x = 0;
-      y = 0;
-      z = 1;
-      return;
-    }
-  
-    x = sin(theta) * cos(phi);
-    y = sin(theta) * sin(phi);
-    z = cos(theta);
+    sphericalToCartesian(theta, phi, x, y, z);
   }
 
   // In rads
@@ -186,9 +175,11 @@ public:
 
   void set(float argx, float argy, float argz)
   {
-    x = argx;
-    y = argy;
-    z = argz;
+    float ll = argx * argx + argy * argy + argz * argz;
+    float l = sqrt(ll);
+    x = argx / l;
+    y = argy / l;
+    z = argz / l;
   }
 
   // in rads
