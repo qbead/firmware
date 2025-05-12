@@ -307,7 +307,8 @@ public:
         bleservice(QB_UUID_SERVICE),
         blecharcol(QB_UUID_COL_CHAR),
         blecharsph(QB_UUID_SPH_CHAR),
-        blecharacc(QB_UUID_ACC_CHAR)
+        blecharacc(QB_UUID_ACC_CHAR),
+        blechargyr(QB_UUID_GYR_CHAR)
         {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
@@ -327,8 +328,9 @@ public:
   const uint8_t phi_quant;
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
-  float rbuffer[3];
+  float rbuffer[3], rgyrobuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
+  float xGyro, yGyro, zGyro, rxGyro, ryGyro, rzGyro; // filtered and raw gyro measurements, in units of deg/s
   float t_acc, p_acc;        // theta and phi according to gravity
   float T_imu;             // last update from the IMU
 
@@ -456,13 +458,20 @@ public:
     blecharsph.setWriteCallback(ble_callback_theta_phi);
     blecharsph.begin();
     blecharsph.write(zerobuffer20, 2);
-    // BLE Characteristic IMU xyz readout
+    // BLE Characteristic IMU xyz accelerometer readout
     blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
     blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharacc.setUserDescriptor("xyz acceleration");
     blecharacc.setFixedLen(3*sizeof(float));
     blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3*sizeof(float));
+    blecharacc.write(zerobuffer20, 3*sizeof(float));    
+    // BLE Characteristic IMU xyz gyroscope readout
+    blechargyr.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blechargyr.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blechargyr.setUserDescriptor("xyz gyroscope");
+    blechargyr.setFixedLen(3*sizeof(float));
+    blechargyr.begin();
+    blechargyr.write(zerobuffer20, 3*sizeof(float));
     startBLEadv();
   }
 
@@ -551,10 +560,20 @@ public:
   void readIMU(bool print=true) {
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
-    rbuffer[2] = imu.readFloatAccelZ();
+    rbuffer[2] = imu.readFloatAccelZ();    
+    rgyrobuffer[0] = imu.readFloatGyroX();
+    rgyrobuffer[1] = imu.readFloatGyroY();
+    rgyrobuffer[2] = imu.readFloatGyroZ();
+
+    // calibration of imu because imu is not aligned with bloch sphere
     rx = (1-2*sx)*rbuffer[ix];
     ry = (1-2*sy)*rbuffer[iy];
     rz = (1-2*sz)*rbuffer[iz];
+
+    // calibration of imu because imu is not aligned with bloch sphere
+    rxGyro = (1-2*sx)*rgyrobuffer[ix];
+    ryGyro = (1-2*sy)*rgyrobuffer[iy];
+    rzGyro = (1-2*sz)*rgyrobuffer[iz];
 
     float T_new = micros();
     float delta = T_new - T_imu;
@@ -570,6 +589,11 @@ public:
       y = d*ry+(1-d)*y;
       z = d*rz+(1-d)*z;
     }
+
+    //Gyroscope filter(currently no filter) // TODO make a better filter for gyroscope
+    xGyro = rxGyro;
+    yGyro = ryGyro;
+    zGyro = rzGyro;
 
     t_acc = theta(x, y, z)*180/3.14159;
     p_acc = phi(x, y)*180/3.14159;
@@ -587,6 +611,12 @@ public:
       Serial.print(p_acc);
       Serial.print("\t-360\t360\t");
       Serial.println();
+      Serial.print(xGyro);
+      Serial.print("\t");
+      Serial.print(yGyro);
+      Serial.print("\t");
+      Serial.print(zGyro);
+      Serial.println();
     }
 
     rbuffer[0] = x;
@@ -598,6 +628,17 @@ public:
       if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
       {
         blecharacc.notify(rbuffer, 3*sizeof(float));
+      }
+    }
+    rgyrobuffer[0] = xGyro;
+    rgyrobuffer[1] = yGyro;
+    rgyrobuffer[2] = zGyro;
+    blechargyr.write(rgyrobuffer, 3*sizeof(float));
+    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    {
+      if ( Bluefruit.connected(conn_hdl) && blechargyr.notifyEnabled(conn_hdl) )
+      {
+        blechargyr.notify(rbuffer, 3*sizeof(float));
       }
     }
   }
