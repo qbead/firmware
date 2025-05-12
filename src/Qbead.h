@@ -369,7 +369,8 @@ public:
     rgyrobuffer[0] = xGyro;
     rgyrobuffer[1] = yGyro;
     rgyrobuffer[2] = zGyro;
-    blecharacc.write(rgyrobuffer, 3*sizeof(float));
+
+    blecharacc.write(rbuffer, 3*sizeof(float));
     for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
     {
       if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
@@ -382,7 +383,7 @@ public:
     {
       if ( Bluefruit.connected(conn_hdl) && blechargyr.notifyEnabled(conn_hdl) )
       {
-        blechargyr.notify(rbuffer, 3*sizeof(float));
+        blechargyr.notify(rgyrobuffer, 3*sizeof(float));
       }
     }
   }
