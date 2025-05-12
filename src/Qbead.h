@@ -12,8 +12,6 @@
 // default configs
 #define QB_LEDPIN 10
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
-#define QB_NSECTIONS 6
-#define QB_NLEGS 12
 #define QB_IMU_ADDR 0x6A
 #define QB_IX 0
 #define QB_IY 2
@@ -21,6 +19,8 @@
 #define QB_SX 0
 #define QB_SY 0
 #define QB_SZ 1
+#define GYRO_THRESHOLD 0.0001
+#define QB_PIXEL_COUNT 62
 
 #define QB_MAX_PRPH_CONNECTION 2
 
@@ -32,6 +32,8 @@ const uint8_t QB_UUID_SPH_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
 const uint8_t QB_UUID_ACC_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_GYR_CHAR[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
 
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
@@ -109,13 +111,22 @@ void connect_callback(uint16_t conn_handle)
   Serial.println(central_name);
 }
 
-// theta in rads
-// phi in rads
+// In rads
 void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
 {
+  // Normalize yaw to be between 0 and 2*PI
+  phi = fmod(phi, 2 * PI);
+  if (phi < 0)
+  {
+    phi += 2 * PI;
+  }
   if (!checkThetaAndPhi(theta * 180 / PI, phi * 180 / PI))
   {
-    Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+    Serial.print("Theta or Phi out of range when creating coordinates class, initializing as 1");
+    Serial.print("Theta: ");
+    Serial.print(theta);
+    Serial.print("Phi: ");
+    Serial.println(phi);
     x = 0;
     y = 0;
     z = 1;
@@ -186,6 +197,18 @@ public:
   void set(float theta, float phi)
   {
     sphericalToCartesian(theta, phi, x, y, z);
+  }
+
+  // in rads
+  void setTheta(float theta)
+  {
+    set(theta, phi());
+  }
+
+  // in rads
+  void setPhi(float phi)
+  {
+    set(theta(), phi);
   }
 
   // Using Rodrigues' rotation formula to rotate the coordinates
@@ -287,8 +310,6 @@ class Qbead {
 public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
         const uint16_t pixelconfig = QB_PIXELCONFIG,
-        const uint16_t nsections = QB_NSECTIONS,
-        const uint16_t nlegs = QB_NLEGS,
         const uint8_t imu_addr = QB_IMU_ADDR,
         const uint8_t ix = QB_IX,
         const uint8_t iy = QB_IY,
@@ -297,11 +318,7 @@ public:
         const bool sy = QB_SY,
         const bool sz = QB_SZ)
       : imu(LSM6DS3(I2C_MODE, imu_addr)),
-        pixels(Adafruit_NeoPixel(nlegs * (nsections - 1) + 2, pin00, pixelconfig)),
-        nsections(nsections),
-        nlegs(nlegs),
-        theta_quant(180 / nsections),
-        phi_quant(360 / nlegs),
+        pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig)),
         ix(ix), iy(iy), iz(iz),
         sx(sx), sy(sy), sz(sz),
         bleservice(QB_UUID_SERVICE),
@@ -320,19 +337,17 @@ public:
   BLECharacteristic blecharcol;
   BLECharacteristic blecharsph;
   BLECharacteristic blecharacc;
+  BLECharacteristic blechargyr;
   uint8_t connection_count = 0;
 
-  const uint8_t nsections;
-  const uint8_t nlegs;
-  const uint8_t theta_quant;
-  const uint8_t phi_quant;
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
   float rbuffer[3], rgyrobuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float xGyro, yGyro, zGyro, rxGyro, ryGyro, rzGyro; // filtered and raw gyro measurements, in units of deg/s
-  float t_acc, p_acc;        // theta and phi according to gravity
   float T_imu;             // last update from the IMU
+  Coordinates gravity = Coordinates(0, 0, 1); // gravity vector
+  float yaw;
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
@@ -487,13 +502,13 @@ public:
     pixels.setBrightness(b);
   }
 
-  Coordinates getCoordinatesAdjustedForGravity(Coordinates c) {
-    Coordinates adjusted = c.rotateRelativeTo(Coordinates(x, y, z));
-    return adjusted;
+  Coordinates getRelativeCoordinates(Coordinates c) {
+    c.setPhi(c.phi() + yaw);
+    return c.rotateRelativeTo(gravity);
   }
 
   void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
-    Coordinates adjusted = getCoordinatesAdjustedForGravity(coordinates);
+    Coordinates adjusted = getRelativeCoordinates(coordinates);
     float theta = adjusted.theta() * 180 / PI;
     float phi = adjusted.phi() * 180 / PI;
     if (phi < 0) {
@@ -590,33 +605,30 @@ public:
       z = d*rz+(1-d)*z;
     }
 
-    //Gyroscope filter(currently no filter) // TODO make a better filter for gyroscope
-    xGyro = rxGyro;
-    yGyro = ryGyro;
-    zGyro = rzGyro;
+    // Gyroscope
+    xGyro = rxGyro * delta * PI / (1000000 * 180);
+    yGyro = ryGyro * delta * PI / (1000000 * 180);
+    zGyro = rzGyro * delta * PI / (1000000 * 180);
+    if (xGyro < GYRO_THRESHOLD && xGyro > -GYRO_THRESHOLD) xGyro = 0;
+    if (yGyro < GYRO_THRESHOLD && yGyro > -GYRO_THRESHOLD) yGyro = 0;
+    if (zGyro < GYRO_THRESHOLD && zGyro > -GYRO_THRESHOLD) zGyro = 0;
 
-    t_acc = theta(x, y, z)*180/3.14159;
-    p_acc = phi(x, y)*180/3.14159;
-    if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
-
+    gravity = Coordinates(x, y, z);
+    // Remove weird behavior near the poles
+    if (gravity.theta() > PI - 0.3) {
+      gravity.set(0, 0, -1);
+    } else if (gravity.theta() < 0.3) {
+      gravity.set(0, 0, 1);
+    }
+    yaw += gravity.x * xGyro + gravity.y * yGyro + gravity.z * zGyro;
+    
     if (print) {
       Serial.print(x);
       Serial.print("\t");
       Serial.print(y);
       Serial.print("\t");
       Serial.print(z);
-      Serial.print("\t-1\t1\t");
-      Serial.print(t_acc);
-      Serial.print("\t");
-      Serial.print(p_acc);
-      Serial.print("\t-360\t360\t");
-      Serial.println();
-      Serial.print(xGyro);
-      Serial.print("\t");
-      Serial.print(yGyro);
-      Serial.print("\t");
-      Serial.print(zGyro);
-      Serial.println();
+      Serial.println("\t-1\t1\t");
     }
 
     rbuffer[0] = x;
