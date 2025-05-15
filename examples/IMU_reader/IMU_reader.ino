@@ -4,7 +4,7 @@ Qbead::Qbead bead;
 
 void setup() {
   bead.begin();
-  bead.setBrightness(25); // way too bright
+  bead.setBrightness(25);  // way too bright
   Serial.println("testing all pixels discretely");
   for (int i = 0; i < bead.pixels.numPixels(); i++) {
     bead.pixels.setPixelColor(i, color(255, 255, 255));
@@ -23,7 +23,7 @@ void setup() {
 }
 
 void loop() {
-  bead.readIMU(false);
+  bead.readIMU();
   bead.clear();
   bead.showAxis();
   bead.setBloch_deg(120, 120, color(255, 0, 255));

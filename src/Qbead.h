@@ -6,8 +6,11 @@
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
 #include <math.h>
+#include <ArduinoEigen.h>
 
 #include <bluefruit.h>
+
+using namespace Eigen;
 
 // default configs
 #define QB_LEDPIN 10
@@ -143,60 +146,78 @@ namespace Qbead {
 class Coordinates
 {
 public:
-  float x, y, z;
+  Vector3d v;
 
   Coordinates(float argx, float argy, float argz)
   {
-    float ll = argx * argx + argy * argy + argz * argz;
-    float l = sqrt(ll);
-    x = argx / l;
-    y = argy / l;
-    z = argz / l;
+    v = Vector3d(argx, argy, argz);
+    v.normalize();
   }
 
   // In rads
   Coordinates(float theta, float phi)
   {
+    float x, y, z = 0;
     sphericalToCartesian(theta, phi, x, y, z);
+    v = Vector3d(x, y, z);
+  }
+
+  Coordinates(Vector3d vector)
+  {
+    v = vector;
+    v.normalize();
+  }
+
+  float x()
+  {
+    return v(0);
+  }
+
+  float y()
+  {
+    return v(1);
+  }
+
+  float z()
+  {
+    return v(2);
   }
 
   // In rads
   float theta()
   {
-    float ll = x * x + y * y + z * z;
-    float l = sqrt(ll);
-    float theta = acos(z / l);
-    return theta;
+    return acos(z());
   }
 
   // In rads
   float phi()
   {
-    float phi = atan2(y, x);
-    return phi;
+    return atan2(y(), x());
   }
 
-  float dist(const Coordinates other) const
+  float dist(Vector3d other) const
   {
-    float dx = x - other.x;
-    float dy = y - other.y;
-    float dz = z - other.z;
-    return sqrt(dx * dx + dy * dy + dz * dz);
+    Vector3d diff = v - other;
+    return diff.norm();
   }
 
   void set(float argx, float argy, float argz)
   {
-    float ll = argx * argx + argy * argy + argz * argz;
-    float l = sqrt(ll);
-    x = argx / l;
-    y = argy / l;
-    z = argz / l;
+    v = Vector3d(argx, argy, argz);
+    v.normalize();
   }
 
   // in rads
   void set(float theta, float phi)
   {
+    float x, y, z = 0;
     sphericalToCartesian(theta, phi, x, y, z);
+    v = Vector3d(x, y, z);
+  }
+
+  void set(Vector3d vector) {
+    v = vector;
+    v.normalize();
   }
 
   // in rads
@@ -211,45 +232,19 @@ public:
     set(theta(), phi);
   }
 
-  // Using Rodrigues' rotation formula to rotate the coordinates
-  Coordinates rotateRelativeTo(const Coordinates& other)
+  // This can be used to align the internal z-axis with gravity
+  Coordinates rotateRelativeTo(Vector3d other)
   {
-    // Simplified: cross product of `other` with (0, 0, 1)
-    float ax = other.y;
-    float ay = -other.x;
-    float az = 0;
+    Vector3d ref = Vector3d(0, 0, -1);
 
-    float r = sqrt(ax * ax + ay * ay + az * az);
+    // Normal case: Compute the axis and angle for rotation
+    Vector3d axis = other.cross(ref).normalized();
+    float angle = acos(other.dot(ref));
 
-    // If already aligned with (0, 0, -1), no rotation needed
-    if (r == 0)
-      return *this;
-
-    // Normalize axis
-    ax /= r;
-    ay /= r;
-    az /= r;
-
-    // Compute angle between other and (0, 0, -1)
-    float angle = acos(-other.z);
-
-    // Rodrigues' rotation formula
-    float cosA = cos(angle);
-    float sinA = sin(angle);
-
-    float newX = (cosA + (1 - cosA) * ax * ax) * x +
-                 ((1 - cosA) * ax * ay - az * sinA) * y +
-                 ((1 - cosA) * ax * az + ay * sinA) * z;
-
-    float newY = ((1 - cosA) * ay * ax + az * sinA) * x +
-                 (cosA + (1 - cosA) * ay * ay) * y +
-                 ((1 - cosA) * ay * az - ax * sinA) * z;
-
-    float newZ = ((1 - cosA) * az * ax - ay * sinA) * x +
-                 ((1 - cosA) * az * ay + ax * sinA) * y +
-                 (cosA + (1 - cosA) * az * az) * z;
-
-    return Coordinates(newX, newY, newZ);
+    // Apply the rotation
+    AngleAxisd rotation = AngleAxisd(angle, axis);
+    Vector3d rotated = rotation * v;
+    return Coordinates(rotated);
   }
 };
 
@@ -264,7 +259,7 @@ public:
 
   void setCoordinates(Coordinates argStateCoordinates)
   {
-    stateCoordinates.set(argStateCoordinates.x, argStateCoordinates.y, argStateCoordinates.z);
+    stateCoordinates.set(argStateCoordinates.v);
   }
 
   Coordinates getCoordinates()
@@ -284,25 +279,25 @@ public:
   // Rotate PI around the x axis
   void gateX()
   {
-    stateCoordinates.set(stateCoordinates.x, -stateCoordinates.y, -stateCoordinates.z);
+    stateCoordinates.set(stateCoordinates.x(), -stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the y axis
   void gateZ()
   {
-    stateCoordinates.set(-stateCoordinates.x, -stateCoordinates.y, stateCoordinates.z);
+    stateCoordinates.set(-stateCoordinates.x(), -stateCoordinates.y(), stateCoordinates.z());
   }
 
   // Rotate PI around the z axis
   void gateY()
   {
-    stateCoordinates.set(-stateCoordinates.x, stateCoordinates.y, -stateCoordinates.z);
+    stateCoordinates.set(-stateCoordinates.x(), stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the xz axis
   void gateH()
   {
-    stateCoordinates.set(stateCoordinates.z, stateCoordinates.y, stateCoordinates.x); //flip x and z axis
+    stateCoordinates.set(stateCoordinates.z(), stateCoordinates.y(), stateCoordinates.x()); //flip x and z axis
   }
 };
 
@@ -355,68 +350,68 @@ public:
   // led map index to Coordinates
   // This map is for the first version of the pcb
   Coordinates led_map_v1[62] = {
-    Coordinates(0, 0),
-    Coordinates(PI / 6, 9 * PI / 6),
-    Coordinates(2 * PI / 6, 9 * PI / 6),
-    Coordinates(3 * PI / 6, 9 * PI / 6),
-    Coordinates(4 * PI / 6, 9 * PI / 6),
-    Coordinates(5 * PI / 6, 9 * PI / 6),
     Coordinates(PI, 0),
-    Coordinates(PI / 6, 10 * PI / 6),
-    Coordinates(2 * PI / 6, 10 * PI / 6),
-    Coordinates(3 * PI / 6, 10 * PI / 6),
-    Coordinates(4 * PI / 6, 10 * PI / 6),
+    Coordinates(5 * PI / 6, 9 * PI / 6),
+    Coordinates(4 * PI / 6, 9 * PI / 6),
+    Coordinates(3 * PI / 6, 9 * PI / 6),
+    Coordinates(2 * PI / 6, 9 * PI / 6),
+    Coordinates(PI / 6, 9 * PI / 6),
+    Coordinates(0, 0),
     Coordinates(5 * PI / 6, 10 * PI / 6),
-    Coordinates(PI / 6, 11 * PI / 6),
-    Coordinates(2 * PI / 6, 11 * PI / 6),
-    Coordinates(3 * PI / 6, 11 * PI / 6),
-    Coordinates(4 * PI / 6, 11 * PI / 6),
+    Coordinates(4 * PI / 6, 10 * PI / 6),
+    Coordinates(3 * PI / 6, 10 * PI / 6),
+    Coordinates(2 * PI / 6, 10 * PI / 6),
+    Coordinates(PI / 6, 10 * PI / 6),
     Coordinates(5 * PI / 6, 11 * PI / 6),
-    Coordinates(PI / 6, 0),
-    Coordinates(2 * PI / 6, 0),
-    Coordinates(3 * PI / 6, 0),
-    Coordinates(4 * PI / 6, 0),
+    Coordinates(4 * PI / 6, 11 * PI / 6),
+    Coordinates(3 * PI / 6, 11 * PI / 6),
+    Coordinates(2 * PI / 6, 11 * PI / 6),
+    Coordinates(PI / 6, 11 * PI / 6),
     Coordinates(5 * PI / 6, 0),
-    Coordinates(PI / 6, PI / 6),
-    Coordinates(2 * PI / 6, PI / 6),
-    Coordinates(3 * PI / 6, PI / 6),
-    Coordinates(4 * PI / 6, PI / 6),
+    Coordinates(4 * PI / 6, 0),
+    Coordinates(3 * PI / 6, 0),
+    Coordinates(2 * PI / 6, 0),
+    Coordinates(PI / 6, 0),
     Coordinates(5 * PI / 6, PI / 6),
-    Coordinates(PI / 6, 2 * PI / 6),
-    Coordinates(2 * PI / 6, 2 * PI / 6),
-    Coordinates(3 * PI / 6, 2 * PI / 6),
-    Coordinates(4 * PI / 6, 2 * PI / 6),
+    Coordinates(4 * PI / 6, PI / 6),
+    Coordinates(3 * PI / 6, PI / 6),
+    Coordinates(2 * PI / 6, PI / 6),
+    Coordinates(PI / 6, PI / 6),
     Coordinates(5 * PI / 6, 2 * PI / 6),
-    Coordinates(PI / 6, 3 * PI / 6),
-    Coordinates(2 * PI / 6, 3 * PI / 6),
-    Coordinates(3 * PI / 6, 3 * PI / 6),
-    Coordinates(4 * PI / 6, 3 * PI / 6),
+    Coordinates(4 * PI / 6, 2 * PI / 6),
+    Coordinates(3 * PI / 6, 2 * PI / 6),
+    Coordinates(2 * PI / 6, 2 * PI / 6),
+    Coordinates(PI / 6, 2 * PI / 6),
     Coordinates(5 * PI / 6, 3 * PI / 6),
-    Coordinates(PI / 6, 4 * PI / 6),
-    Coordinates(2 * PI / 6, 4 * PI / 6),
-    Coordinates(3 * PI / 6, 4 * PI / 6),
-    Coordinates(4 * PI / 6, 4 * PI / 6),
+    Coordinates(4 * PI / 6, 3 * PI / 6),
+    Coordinates(3 * PI / 6, 3 * PI / 6),
+    Coordinates(2 * PI / 6, 3 * PI / 6),
+    Coordinates(PI / 6, 3 * PI / 6),
     Coordinates(5 * PI / 6, 4 * PI / 6),
-    Coordinates(PI / 6, 5 * PI / 6),
-    Coordinates(2 * PI / 6, 5 * PI / 6),
-    Coordinates(3 * PI / 6, 5 * PI / 6),
-    Coordinates(4 * PI / 6, 5 * PI / 6),
+    Coordinates(4 * PI / 6, 4 * PI / 6),
+    Coordinates(3 * PI / 6, 4 * PI / 6),
+    Coordinates(2 * PI / 6, 4 * PI / 6),
+    Coordinates(PI / 6, 4 * PI / 6),
     Coordinates(5 * PI / 6, 5 * PI / 6),
-    Coordinates(PI / 6, 6 * PI / 6),
-    Coordinates(2 * PI / 6, 6 * PI / 6),
-    Coordinates(3 * PI / 6, 6 * PI / 6),
-    Coordinates(4 * PI / 6, 6 * PI / 6),
+    Coordinates(4 * PI / 6, 5 * PI / 6),
+    Coordinates(3 * PI / 6, 5 * PI / 6),
+    Coordinates(2 * PI / 6, 5 * PI / 6),
+    Coordinates(PI / 6, 5 * PI / 6),
     Coordinates(5 * PI / 6, 6 * PI / 6),
-    Coordinates(PI / 6, 7 * PI / 6),
-    Coordinates(2 * PI / 6, 7 * PI / 6),
-    Coordinates(3 * PI / 6, 7 * PI / 6),
-    Coordinates(4 * PI / 6, 7 * PI / 6),
+    Coordinates(4 * PI / 6, 6 * PI / 6),
+    Coordinates(3 * PI / 6, 6 * PI / 6),
+    Coordinates(2 * PI / 6, 6 * PI / 6),
+    Coordinates(PI / 6, 6 * PI / 6),
     Coordinates(5 * PI / 6, 7 * PI / 6),
-    Coordinates(PI / 6, 8 * PI / 6),
-    Coordinates(2 * PI / 6, 8 * PI / 6),
-    Coordinates(3 * PI / 6, 8 * PI / 6),
-    Coordinates(4 * PI / 6, 8 * PI / 6),
+    Coordinates(4 * PI / 6, 7 * PI / 6),
+    Coordinates(3 * PI / 6, 7 * PI / 6),
+    Coordinates(2 * PI / 6, 7 * PI / 6),
+    Coordinates(PI / 6, 7 * PI / 6),
     Coordinates(5 * PI / 6, 8 * PI / 6),
+    Coordinates(4 * PI / 6, 8 * PI / 6),
+    Coordinates(3 * PI / 6, 8 * PI / 6),
+    Coordinates(2 * PI / 6, 8 * PI / 6),
+    Coordinates(PI / 6, 8 * PI / 6),
   };
 
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
@@ -504,7 +499,10 @@ public:
 
   Coordinates getRelativeCoordinates(Coordinates c) {
     c.setPhi(c.phi() + yaw);
-    return c.rotateRelativeTo(gravity);
+    if (gravity.x() > -0.95 && gravity.z() < 0.95) {
+      c.setPhi(c.phi() + gravity.phi());
+    }
+    return c.rotateRelativeTo(gravity.v);
   }
 
   void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
@@ -530,7 +528,7 @@ public:
   float getDistToLed(float theta, float phi, int index) {
     const Coordinates led = led_map_v1[index];
     const Coordinates reference(theta, phi);
-    return led.dist(reference);
+    return led.dist(reference.v);
   }
 
   // Single bit is lit up on the Bloch sphere  
@@ -608,19 +606,16 @@ public:
     // Gyroscope
     xGyro = rxGyro * delta * PI / (1000000 * 180);
     yGyro = ryGyro * delta * PI / (1000000 * 180);
-    zGyro = rzGyro * delta * PI / (1000000 * 180);
+    // The zGyro has an offset of 0.0006 rad/s
+    zGyro = rzGyro * delta * PI / (1000000 * 180) - 0.0006;
     if (xGyro < GYRO_THRESHOLD && xGyro > -GYRO_THRESHOLD) xGyro = 0;
     if (yGyro < GYRO_THRESHOLD && yGyro > -GYRO_THRESHOLD) yGyro = 0;
     if (zGyro < GYRO_THRESHOLD && zGyro > -GYRO_THRESHOLD) zGyro = 0;
 
     gravity = Coordinates(x, y, z);
-    // Remove weird behavior near the poles
-    if (gravity.theta() > PI - 0.3) {
-      gravity.set(0, 0, -1);
-    } else if (gravity.theta() < 0.3) {
-      gravity.set(0, 0, 1);
-    }
-    yaw += gravity.x * xGyro + gravity.y * yGyro + gravity.z * zGyro;
+    Vector3d gyro = Vector3d(xGyro, yGyro, zGyro);
+    yaw += gravity.v.dot(gyro);
+    yaw = fmod(yaw, 2 * PI);
     
     if (print) {
       Serial.print(x);
@@ -628,7 +623,14 @@ public:
       Serial.print(y);
       Serial.print("\t");
       Serial.print(z);
-      Serial.println("\t-1\t1\t");
+      Serial.print("\t-1\t1\t");
+      Serial.print(xGyro * 1000);
+      Serial.print("\t");
+      Serial.print(yGyro * 1000);
+      Serial.print("\t");
+      Serial.print(zGyro * 1000);
+      Serial.print("\t");
+      Serial.println(yaw * 180 / PI);
     }
 
     rbuffer[0] = x;
