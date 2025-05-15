@@ -146,7 +146,7 @@ namespace Qbead {
 class Coordinates
 {
 public:
-  Vector3d v;
+Vector3d v;
 
   Coordinates(float argx, float argy, float argz)
   {
@@ -337,7 +337,7 @@ public:
 
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
-  float rbuffer[3], rgyrobuffer[3];
+  float rbuffer[3], rgyrobuffer[3], filteredGyro[3], rotatedGyro[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float xGyro, yGyro, zGyro, rxGyro, ryGyro, rzGyro; // filtered and raw gyro measurements, in units of deg/s
   float T_imu;             // last update from the IMU
@@ -570,6 +570,49 @@ public:
     setBloch_deg(theta, phi, c, true);
   }
 
+  void rotateGyroAroundGravity()
+  {
+    Coordinates rotatedX = getRelativeCoordinates(Coordinates(1, 0, 0));
+    Coordinates rotatedY = getRelativeCoordinates(Coordinates(0, 1, 0));
+    Coordinates rotatedZ = getRelativeCoordinates(Coordinates(0, 0, 1));
+
+    rotatedGyro[0] = rotatedX.x()*filteredGyro[0] + rotatedX.y()*filteredGyro[1] + rotatedX.z()*filteredGyro[2];
+    rotatedGyro[1] = rotatedY.x()*filteredGyro[0] + rotatedY.y()*filteredGyro[1] + rotatedY.z()*filteredGyro[2];
+    rotatedGyro[2] = rotatedZ.x()*filteredGyro[0] + rotatedZ.y()*filteredGyro[1] + rotatedZ.z()*filteredGyro[2];
+  }
+
+  bool checkRotation(QuantumState &toBeRotated)
+  {
+    if (abs(rotatedGyro[0]) > 300)
+    {
+      if (Serial)
+      {
+        Serial.println("Executing X gate");
+      }
+      toBeRotated.gateX();
+      return true;
+    }
+    if (abs(rotatedGyro[1]) > 300)
+    {
+      if (Serial)
+      {
+        Serial.println("Executing Y gate");
+      }
+      toBeRotated.gateY();
+      return true;
+    }
+    if (abs(rotatedGyro[2]) > 300)
+    {
+      if (Serial)
+      {
+        Serial.println("Executing Z gate");
+      }
+      toBeRotated.gateZ();
+      return true;
+    }
+    return false;
+  }
+
   void readIMU(bool print=true) {
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
@@ -588,16 +631,37 @@ public:
     ryGyro = (1-2*sy)*rgyrobuffer[iy];
     rzGyro = (1-2*sz)*rgyrobuffer[iz];
 
+    Serial.print("raw gyro: ");
+    Serial.print(rxGyro);
+    Serial.print("\t");
+    Serial.print(ryGyro);
+    Serial.print("\t");
+    Serial.println(rzGyro);
+    
     float T_new = micros();
     float delta = T_new - T_imu;
     T_imu = T_new;
-    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
+    // timefilter filter
+    const float T_acc = 100000; // 100 ms // TODO make the filter timeconstant configurable
+    const float T_gyr = 10000; // 10 ms
+    if (delta > 10000)
+    {
+      filteredGyro[0] = rxGyro;
+      filteredGyro[1] = ryGyro;
+      filteredGyro[2] = rzGyro;
+    } else
+    {
+      float d = delta/T_gyr;
+      filteredGyro[0] = d*rxGyro+(1-d)*filteredGyro[0];
+      filteredGyro[1] = d*ryGyro+(1-d)*filteredGyro[1];
+      filteredGyro[2] = d*rzGyro+(1-d)*filteredGyro[2];
+    }
     if (delta > 100000) {
       x = rx;
       y = ry;
       z = rz;
     } else {
-      float d = delta/T;
+      float d = delta/T_acc;
       x = d*rx+(1-d)*x;
       y = d*ry+(1-d)*y;
       z = d*rz+(1-d)*z;
@@ -616,8 +680,17 @@ public:
     Vector3d gyro = Vector3d(xGyro, yGyro, zGyro);
     yaw += gravity.v.dot(gyro);
     yaw = fmod(yaw, 2 * PI);
-    
+
+    rotateGyroAroundGravity(); //Sets the rotatedgyro array
+
+
     if (print) {
+      Serial.print("rotatedGyro: ");
+      Serial.print(rotatedGyro[0]);
+      Serial.print("\t");
+      Serial.print(rotatedGyro[1]);
+      Serial.print("\t");
+      Serial.println(rotatedGyro[2]);
       Serial.print(x);
       Serial.print("\t");
       Serial.print(y);
