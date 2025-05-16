@@ -6,7 +6,25 @@ bool freeze = 0;
 float timeIMU = 0;
 float counter = 0;
 uint32_t cooldownColor = color(255, 255, 255);
+const bool toggleAnimationOn = 1;
 
+
+void animationGate(Qbead::Coordinates oldPoint, int steps, int animationLength)
+{
+  for (int i = 0; i < steps; i++)
+  {
+    bead.clear();
+    float q = i/ (float) steps;
+    float newTheta = q*state.getCoordinates().theta() + (1-q)*oldPoint.theta();
+    float newPhi = q*state.getCoordinates().phi() + (1-q)*oldPoint.phi();
+    Qbead::Coordinates animationPoint = Qbead::Coordinates(newTheta, newPhi);
+    bead.setLed(animationPoint, color(255, 255, 0));
+    bead.readIMU();
+    bead.showAxis();
+    bead.show();
+    delay(animationLength/steps);
+  }
+}
 
 void setup() {
   bead.begin();
@@ -45,9 +63,14 @@ void loop() {
     }
   } else
   {
+    Qbead::QuantumState oldState = state;
     cooldownColor = color(255, 255, 255);
     freeze = bead.checkRotation(state);
     timeIMU = micros();
+    if (freeze && toggleAnimationOn)
+    {
+      animationGate(oldState.getCoordinates(), 30, 4000);
+    }
   }
   bead.setLed(state.getCoordinates(), cooldownColor);
   bead.show();
