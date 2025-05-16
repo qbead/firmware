@@ -197,6 +197,13 @@ public:
     return atan2(y(), x());
   }
 
+  Vector2cf stateVector2D()
+  {
+    std::complex<float> alpha = cos(theta()/2);
+    std::complex<float> beta = exp(std::complex<float>(0, phi())) * sin(theta()/2);
+    return {alpha, beta};
+  }
+
   float dist(Vector3d other) const
   {
     Vector3d diff = v - other;
@@ -262,28 +269,54 @@ public:
     this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
   }
 
-  // Rotate PI around the x axis
-  void gateX()
+  void applyGate(Matrix2cf gate, float rotationFraction = 1)
   {
-    stateCoordinates.set(stateCoordinates.x(), -stateCoordinates.y(), -stateCoordinates.z());
+    // TODO find way to do part of the rotation for animation
+    // gate = gate.pow(rotationFraction); // (Arduino does not support .pow on a matrix)
+    Vector2cf stateVector = stateCoordinates.stateVector2D();
+    stateVector = gate * stateVector;
+    stateVector.normalize();
+    stateCoordinates.set(2*acos(abs(stateVector.x())), arg(stateVector.y()) - arg(stateVector.x()));
+  }
+
+  // Rotate PI around the x axis
+  void gateX(float rotationFraction = 1)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << std::complex<float>(0, 0), std::complex<float>(1, 0), 
+                  std::complex<float>(1, 0), std::complex<float>(0, 0);
+    applyGate(gateMatrix, rotationFraction);
+    //stateCoordinates.set(stateCoordinates.x(), -stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the y axis
-  void gateZ()
-  {
-    stateCoordinates.set(-stateCoordinates.x(), -stateCoordinates.y(), stateCoordinates.z());
+  void gateZ(float rotationFraction = 1)
+  { 
+    Matrix2cf gateMatrix;
+    gateMatrix << std::complex<float>(1, 0), std::complex<float>(0, 0), 
+                  std::complex<float>(0, 0), std::complex<float>(-1, 0);
+    applyGate(gateMatrix, rotationFraction);
+    //stateCoordinates.set(-stateCoordinates.x(), -stateCoordinates.y(), stateCoordinates.z());
   }
 
   // Rotate PI around the z axis
-  void gateY()
+  void gateY(float rotationFraction = 1)
   {
-    stateCoordinates.set(-stateCoordinates.x(), stateCoordinates.y(), -stateCoordinates.z());
+    Matrix2cf gateMatrix;
+    gateMatrix << std::complex<float>(0, 0), std::complex<float>(0, -1),
+                  std::complex<float>(0, 1), std::complex<float>(0, 0);
+    applyGate(gateMatrix, rotationFraction);
+    //stateCoordinates.set(-stateCoordinates.x(), stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the xz axis
-  void gateH()
+  void gateH(float rotationFraction = 1)
   {
-    stateCoordinates.set(stateCoordinates.z(), stateCoordinates.y(), stateCoordinates.x()); //flip x and z axis
+    Matrix2cf gateMatrix;
+    gateMatrix << std::complex<float>(1/sqrt(2), 0), std::complex<float>(1/sqrt(2), 0), 
+                  std::complex<float>(1/sqrt(2), 0), std::complex<float>(-1/sqrt(2), 0);
+    applyGate(gateMatrix, rotationFraction);
+    //stateCoordinates.set(stateCoordinates.z(), stateCoordinates.y(), stateCoordinates.x()); //flip x and z axis
   }
 };
 
