@@ -22,7 +22,9 @@ using namespace Eigen;
 #define QB_SX 0
 #define QB_SY 0
 #define QB_SZ 1
-#define GYRO_THRESHOLD 0.0001
+#define GYRO_MEASUREMENT_THRESHOLD 0.0001
+#define GYRO_GATE_THRESHOLD 500
+#define SHAKING_THRESHOLD 0.09
 #define QB_PIXEL_COUNT 62
 
 #define QB_MAX_PRPH_CONNECTION 2
@@ -252,13 +254,12 @@ public:
     return stateCoordinates;
   }
 
-  int collapse()
+  void collapse()
   {
     const float theta = stateCoordinates.theta();
     const float a = cos(theta / 2);
     const bool is1 = random(0, 100) < a * a * 100;
     this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
-    return is1 ? 1 : 0;
   }
 
   // Rotate PI around the x axis
@@ -547,25 +548,60 @@ public:
     setBloch_deg(theta, phi, c, true);
   }
 
-  bool checkRotation(QuantumState &toBeRotated)
+  Vector3d getGravity()
   {
-    if (abs(gyroVector[0]) > 300)
+    // substract gravity from the gravity vector
+    Vector3d g = gravity;
+    g.normalize();
+    return gravity - g;
+  }
+
+  bool checkMotion(QuantumState &toBeRotated)
+  {
+    Vector3d gravity = getGravity();
+    u_int8_t n = 0;
+    // store the function in a variable (default is do nothing)
+    void (QuantumState::*func)();
+    if (abs(gyroVector[0]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing X gate");
-      toBeRotated.gateX();
-      return true;
+      func = &QuantumState::gateX;
+      n++;
     }
-    if (abs(gyroVector[1]) > 300)
+    if (abs(gyroVector[1]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing Y gate");
-      toBeRotated.gateY();
-      return true;
+      func = &QuantumState::gateY;
+      n++;
     }
-    if (abs(gyroVector[2]) > 300)
+    if (abs(gyroVector[2]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing Z gate");
-      toBeRotated.gateZ();
+      func = &QuantumState::gateZ;
+      n++;
+    }
+    if (gravity(2) * gravity(2) > SHAKING_THRESHOLD)
+    {
+      Serial.println("Collapsing");
+      toBeRotated.collapse();
+      func = &QuantumState::collapse;
+      n++;
+    }
+    if (gravity(0) * gravity(0) + gravity(1) * gravity(1) > SHAKING_THRESHOLD)
+    {
+      Serial.println("Hadamard gate");
+      func = &QuantumState::gateH;
+      n++;
+    }
+    if (n == 1)
+    {
+      // execute the function
+      (toBeRotated.*func)();
       return true;
+    }
+    else if (n > 1)
+    {
+      Serial.println("Multiple gates detected, ignoring");
     }
     return false;
   }
@@ -587,13 +623,6 @@ public:
     rxGyro = (1-2*sx)*rgyrobuffer[ix];
     ryGyro = (1-2*sy)*rgyrobuffer[iy];
     rzGyro = (1-2*sz)*rgyrobuffer[iz];
-
-    Serial.print("raw gyro: ");
-    Serial.print(rxGyro);
-    Serial.print("\t");
-    Serial.print(ryGyro);
-    Serial.print("\t");
-    Serial.println(rzGyro);
     
     float T_new = micros();
     float delta = T_new - T_imu;
@@ -626,9 +655,9 @@ public:
     yGyro = ryGyro * delta * PI / (1000000 * 180);
     // The zGyro has an offset of 0.0006 rad/s
     zGyro = rzGyro * delta * PI / (1000000 * 180) - 0.0006;
-    if (xGyro < GYRO_THRESHOLD && xGyro > -GYRO_THRESHOLD) xGyro = 0;
-    if (yGyro < GYRO_THRESHOLD && yGyro > -GYRO_THRESHOLD) yGyro = 0;
-    if (zGyro < GYRO_THRESHOLD && zGyro > -GYRO_THRESHOLD) zGyro = 0;
+    if (xGyro < GYRO_MEASUREMENT_THRESHOLD && xGyro > -GYRO_MEASUREMENT_THRESHOLD) xGyro = 0;
+    if (yGyro < GYRO_MEASUREMENT_THRESHOLD && yGyro > -GYRO_MEASUREMENT_THRESHOLD) yGyro = 0;
+    if (zGyro < GYRO_MEASUREMENT_THRESHOLD && zGyro > -GYRO_MEASUREMENT_THRESHOLD) zGyro = 0;
 
     gravity = Vector3d(x, y, z);
     Vector3d gyro = Vector3d(xGyro, yGyro, zGyro);
@@ -636,6 +665,12 @@ public:
     yaw = fmod(yaw, 2 * PI);
 
     if (print) {
+      Serial.print("raw gyro: ");
+      Serial.print(rxGyro);
+      Serial.print("\t");
+      Serial.print(ryGyro);
+      Serial.print("\t");
+      Serial.println(rzGyro);
       Serial.print("gyro: ");
       Serial.print(gyroVector(0));
       Serial.print("\t");
@@ -643,10 +678,16 @@ public:
       Serial.print("\t");
       Serial.println(gyroVector(2));
       Serial.print(x);
+      Serial.print(" - ");
+      Serial.print(imu.readFloatAccelX());
       Serial.print("\t");
       Serial.print(y);
+      Serial.print(" - ");
+      Serial.print(imu.readFloatAccelY());
       Serial.print("\t");
       Serial.print(z);
+      Serial.print(" - ");
+      Serial.print(imu.readFloatAccelZ());
       Serial.print("\t-1\t1\t");
       Serial.print(xGyro * 1000);
       Serial.print("\t");
