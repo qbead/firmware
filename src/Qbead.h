@@ -1,13 +1,11 @@
 #ifndef QBEAD_H
 #define QBEAD_H
 
-
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
 #include <math.h>
 #include <ArduinoEigen.h>
-
 #include <bluefruit.h>
 
 using namespace Eigen;
@@ -23,7 +21,7 @@ using namespace Eigen;
 #define QB_SY 0
 #define QB_SZ 1
 #define GYRO_MEASUREMENT_THRESHOLD 0.0001
-#define GYRO_GATE_THRESHOLD 500
+#define GYRO_GATE_THRESHOLD 400
 #define SHAKING_THRESHOLD 0.09
 #define QB_PIXEL_COUNT 62
 
@@ -141,6 +139,29 @@ void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
   x = sin(theta) * cos(phi);
   y = sin(theta) * sin(phi);
   z = cos(theta);
+}
+
+// Tap detection
+LSM6DS3 myIMU(I2C_MODE, 0x6A);
+uint8_t interruptCount = 0; // Amount of received interrupts
+uint8_t prevInterruptCount = 0; // Interrupt Counter from last loop
+
+void setupTapInterrupt() {
+  uint8_t error = 0;
+  uint8_t dataToWrite = 0;
+
+  // Double Tap Config
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x8E);// INTERRUPTS_ENABLE, SLOPE_FDS
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x8C);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x80);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x08);
+}
+
+void int1ISR()
+{
+  interruptCount++;
 }
 
 namespace Qbead {
@@ -503,6 +524,11 @@ public:
     blechargyr.begin();
     blechargyr.write(zerobuffer20, 3*sizeof(float));
     startBLEadv();
+
+    // Tap detection
+    setupTapInterrupt();
+    pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
+    attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
   }
 
   void clear() {
@@ -591,50 +617,29 @@ public:
 
   bool checkMotion(QuantumState &toBeRotated)
   {
-    Vector3d gravity = getGravity();
-    u_int8_t n = 0;
-    // store the function in a variable (default is do nothing)
-    void (QuantumState::*func)();
+    if (interruptCount > prevInterruptCount) {
+      Serial.println("Interrupt received!");
+      toBeRotated.collapse();
+      prevInterruptCount = interruptCount;
+      return true;
+    }
     if (abs(gyroVector[0]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing X gate");
-      func = &QuantumState::gateX;
-      n++;
+      toBeRotated.gateX();
+      return true;
     }
     if (abs(gyroVector[1]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing Y gate");
-      func = &QuantumState::gateY;
-      n++;
+      toBeRotated.gateY();
+      return true;
     }
     if (abs(gyroVector[2]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing Z gate");
-      func = &QuantumState::gateZ;
-      n++;
-    }
-    if (gravity(2) * gravity(2) > SHAKING_THRESHOLD)
-    {
-      Serial.println("Collapsing");
-      toBeRotated.collapse();
-      func = &QuantumState::collapse;
-      n++;
-    }
-    if (gravity(0) * gravity(0) + gravity(1) * gravity(1) > SHAKING_THRESHOLD)
-    {
-      Serial.println("Hadamard gate");
-      func = &QuantumState::gateH;
-      n++;
-    }
-    if (n == 1)
-    {
-      // execute the function
-      (toBeRotated.*func)();
+      toBeRotated.gateZ();
       return true;
-    }
-    else if (n > 1)
-    {
-      Serial.println("Multiple gates detected, ignoring");
     }
     return false;
   }
