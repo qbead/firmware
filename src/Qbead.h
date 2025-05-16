@@ -195,6 +195,13 @@ Vector3d v;
     return atan2(y(), x());
   }
 
+  Vector2cf stateVector2D()
+  {
+    std::complex<float> alpha = cos(theta()/2);
+    std::complex<float> beta = exp(std::complex<float>(0, phi())) * sin(theta()/2);
+    return {alpha, beta};
+  }
+
   float dist(Vector3d other) const
   {
     Vector3d diff = v - other;
@@ -276,28 +283,54 @@ public:
     return is1 ? 1 : 0;
   }
 
-  // Rotate PI around the x axis
-  void gateX()
+  void applyGate(Matrix2cf gate, float rotationFraction = 1)
   {
-    stateCoordinates.set(stateCoordinates.x(), -stateCoordinates.y(), -stateCoordinates.z());
+    // TODO find way to do part of the rotation for animation
+    // gate = gate.pow(rotationFraction); // (Arduino does not support .pow on a matrix)
+    Vector2cf stateVector = stateCoordinates.stateVector2D();
+    stateVector = gate * stateVector;
+    stateVector.normalize();
+    stateCoordinates.set(2*acos(abs(stateVector.x())), arg(stateVector.y()) - arg(stateVector.x()));
+  }
+
+  // Rotate PI around the x axis
+  void gateX(float rotationFraction = 1)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << std::complex<float>(0, 0), std::complex<float>(1, 0), 
+                  std::complex<float>(1, 0), std::complex<float>(0, 0);
+    applyGate(gateMatrix, rotationFraction);
+    //stateCoordinates.set(stateCoordinates.x(), -stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the y axis
-  void gateZ()
-  {
-    stateCoordinates.set(-stateCoordinates.x(), -stateCoordinates.y(), stateCoordinates.z());
+  void gateZ(float rotationFraction = 1)
+  { 
+    Matrix2cf gateMatrix;
+    gateMatrix << std::complex<float>(1, 0), std::complex<float>(0, 0), 
+                  std::complex<float>(0, 0), std::complex<float>(-1, 0);
+    applyGate(gateMatrix, rotationFraction);
+    //stateCoordinates.set(-stateCoordinates.x(), -stateCoordinates.y(), stateCoordinates.z());
   }
 
   // Rotate PI around the z axis
-  void gateY()
+  void gateY(float rotationFraction = 1)
   {
-    stateCoordinates.set(-stateCoordinates.x(), stateCoordinates.y(), -stateCoordinates.z());
+    Matrix2cf gateMatrix;
+    gateMatrix << std::complex<float>(0, 0), std::complex<float>(0, -1),
+                  std::complex<float>(0, 1), std::complex<float>(0, 0);
+    applyGate(gateMatrix, rotationFraction);
+    //stateCoordinates.set(-stateCoordinates.x(), stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the xz axis
-  void gateH()
+  void gateH(float rotationFraction = 1)
   {
-    stateCoordinates.set(stateCoordinates.z(), stateCoordinates.y(), stateCoordinates.x()); //flip x and z axis
+    Matrix2cf gateMatrix;
+    gateMatrix << std::complex<float>(1/sqrt(2), 0), std::complex<float>(1/sqrt(2), 0), 
+                  std::complex<float>(1/sqrt(2), 0), std::complex<float>(-1/sqrt(2), 0);
+    applyGate(gateMatrix, rotationFraction);
+    //stateCoordinates.set(stateCoordinates.z(), stateCoordinates.y(), stateCoordinates.x()); //flip x and z axis
   }
 };
 
@@ -506,7 +539,7 @@ public:
   }
 
   void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
-    Coordinates adjusted = getRelativeCoordinates(coordinates);
+    Coordinates adjusted = coordinates;   // getRelativeCoordinates(coordinates);
     float theta = adjusted.theta() * 180 / PI;
     float phi = adjusted.phi() * 180 / PI;
     if (phi < 0) {
@@ -583,7 +616,7 @@ public:
 
   bool checkRotation(QuantumState &toBeRotated)
   {
-    if (abs(rotatedGyro[0]) > 300)
+    if (abs(filteredGyro[0]) > 400)
     {
       if (Serial)
       {
@@ -592,7 +625,7 @@ public:
       toBeRotated.gateX();
       return true;
     }
-    if (abs(rotatedGyro[1]) > 300)
+    if (abs(filteredGyro[1]) > 400)
     {
       if (Serial)
       {
@@ -601,7 +634,7 @@ public:
       toBeRotated.gateY();
       return true;
     }
-    if (abs(rotatedGyro[2]) > 300)
+    if (abs(filteredGyro[2]) > 300)
     {
       if (Serial)
       {
@@ -630,13 +663,6 @@ public:
     rxGyro = (1-2*sx)*rgyrobuffer[ix];
     ryGyro = (1-2*sy)*rgyrobuffer[iy];
     rzGyro = (1-2*sz)*rgyrobuffer[iz];
-
-    Serial.print("raw gyro: ");
-    Serial.print(rxGyro);
-    Serial.print("\t");
-    Serial.print(ryGyro);
-    Serial.print("\t");
-    Serial.println(rzGyro);
     
     float T_new = micros();
     float delta = T_new - T_imu;
@@ -685,6 +711,12 @@ public:
 
 
     if (print) {
+      Serial.print("raw gyro: ");
+      Serial.print(rxGyro);
+      Serial.print("\t");
+      Serial.print(ryGyro);
+      Serial.print("\t");
+      Serial.println(rzGyro);
       Serial.print("rotatedGyro: ");
       Serial.print(rotatedGyro[0]);
       Serial.print("\t");
