@@ -22,7 +22,9 @@ using namespace Eigen;
 #define QB_SX 0
 #define QB_SY 0
 #define QB_SZ 1
-#define GYRO_THRESHOLD 0.0001
+#define GYRO_MEASUREMENT_THRESHOLD 0.0001
+#define GYRO_GATE_THRESHOLD 500
+#define SHAKING_THRESHOLD 0.09
 #define QB_PIXEL_COUNT 62
 
 #define QB_MAX_PRPH_CONNECTION 2
@@ -146,7 +148,7 @@ namespace Qbead {
 class Coordinates
 {
 public:
-Vector3d v;
+  Vector3d v;
 
   Coordinates(float argx, float argy, float argz)
   {
@@ -238,21 +240,6 @@ Vector3d v;
   {
     set(theta(), phi);
   }
-
-  // This can be used to align the internal z-axis with gravity
-  Coordinates rotateRelativeTo(Vector3d other)
-  {
-    Vector3d ref = Vector3d(0, 0, -1);
-
-    // Normal case: Compute the axis and angle for rotation
-    Vector3d axis = other.cross(ref).normalized();
-    float angle = acos(other.dot(ref));
-
-    // Apply the rotation
-    AngleAxisd rotation = AngleAxisd(angle, axis);
-    Vector3d rotated = rotation * v;
-    return Coordinates(rotated);
-  }
 };
 
 class QuantumState
@@ -274,13 +261,12 @@ public:
     return stateCoordinates;
   }
 
-  int collapse()
+  void collapse()
   {
     const float theta = stateCoordinates.theta();
     const float a = cos(theta / 2);
     const bool is1 = random(0, 100) < a * a * 100;
     this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
-    return is1 ? 1 : 0;
   }
 
   void applyGate(Matrix2cf gate, float rotationFraction = 1)
@@ -370,11 +356,12 @@ public:
 
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
-  float rbuffer[3], rgyrobuffer[3], filteredGyro[3], rotatedGyro[3];
+  float rbuffer[3], rgyrobuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float xGyro, yGyro, zGyro, rxGyro, ryGyro, rzGyro; // filtered and raw gyro measurements, in units of deg/s
   float T_imu;             // last update from the IMU
-  Coordinates gravity = Coordinates(0, 0, 1); // gravity vector
+  Vector3d gravity = Vector3d(0, 0, 1); // gravity vector
+  Vector3d gyroVector = Vector3d(0, 0, 1); // gyro vector
   float yaw;
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
@@ -530,18 +517,9 @@ public:
     pixels.setBrightness(b);
   }
 
-  Coordinates getRelativeCoordinates(Coordinates c) {
-    c.setPhi(c.phi() + yaw);
-    if (gravity.x() > -0.95 && gravity.z() < 0.95) {
-      c.setPhi(c.phi() + gravity.phi());
-    }
-    return c.rotateRelativeTo(gravity.v);
-  }
-
   void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
-    Coordinates adjusted = coordinates;   // getRelativeCoordinates(coordinates);
-    float theta = adjusted.theta() * 180 / PI;
-    float phi = adjusted.phi() * 180 / PI;
+    float theta = coordinates.theta() * 180 / PI;
+    float phi = coordinates.phi() * 180 / PI;
     if (phi < 0) {
       phi += 360;
     }
@@ -603,45 +581,60 @@ public:
     setBloch_deg(theta, phi, c, true);
   }
 
-  void rotateGyroAroundGravity()
+  Vector3d getGravity()
   {
-    Coordinates rotatedX = getRelativeCoordinates(Coordinates(1, 0, 0));
-    Coordinates rotatedY = getRelativeCoordinates(Coordinates(0, 1, 0));
-    Coordinates rotatedZ = getRelativeCoordinates(Coordinates(0, 0, 1));
-
-    rotatedGyro[0] = rotatedX.x()*filteredGyro[0] + rotatedX.y()*filteredGyro[1] + rotatedX.z()*filteredGyro[2];
-    rotatedGyro[1] = rotatedY.x()*filteredGyro[0] + rotatedY.y()*filteredGyro[1] + rotatedY.z()*filteredGyro[2];
-    rotatedGyro[2] = rotatedZ.x()*filteredGyro[0] + rotatedZ.y()*filteredGyro[1] + rotatedZ.z()*filteredGyro[2];
+    // substract gravity from the gravity vector
+    Vector3d g = gravity;
+    g.normalize();
+    return gravity - g;
   }
 
-  bool checkRotation(QuantumState &toBeRotated)
+  bool checkMotion(QuantumState &toBeRotated)
   {
-    if (abs(filteredGyro[0]) > 400)
+    Vector3d gravity = getGravity();
+    u_int8_t n = 0;
+    // store the function in a variable (default is do nothing)
+    void (QuantumState::*func)();
+    if (abs(gyroVector[0]) > GYRO_GATE_THRESHOLD)
     {
-      if (Serial)
-      {
-        Serial.println("Executing X gate");
-      }
-      toBeRotated.gateX();
+      Serial.println("Executing X gate");
+      func = &QuantumState::gateX;
+      n++;
+    }
+    if (abs(gyroVector[1]) > GYRO_GATE_THRESHOLD)
+    {
+      Serial.println("Executing Y gate");
+      func = &QuantumState::gateY;
+      n++;
+    }
+    if (abs(gyroVector[2]) > GYRO_GATE_THRESHOLD)
+    {
+      Serial.println("Executing Z gate");
+      func = &QuantumState::gateZ;
+      n++;
+    }
+    if (gravity(2) * gravity(2) > SHAKING_THRESHOLD)
+    {
+      Serial.println("Collapsing");
+      toBeRotated.collapse();
+      func = &QuantumState::collapse;
+      n++;
+    }
+    if (gravity(0) * gravity(0) + gravity(1) * gravity(1) > SHAKING_THRESHOLD)
+    {
+      Serial.println("Hadamard gate");
+      func = &QuantumState::gateH;
+      n++;
+    }
+    if (n == 1)
+    {
+      // execute the function
+      (toBeRotated.*func)();
       return true;
     }
-    if (abs(filteredGyro[1]) > 400)
+    else if (n > 1)
     {
-      if (Serial)
-      {
-        Serial.println("Executing Y gate");
-      }
-      toBeRotated.gateY();
-      return true;
-    }
-    if (abs(filteredGyro[2]) > 300)
-    {
-      if (Serial)
-      {
-        Serial.println("Executing Z gate");
-      }
-      toBeRotated.gateZ();
-      return true;
+      Serial.println("Multiple gates detected, ignoring");
     }
     return false;
   }
@@ -672,15 +665,12 @@ public:
     const float T_gyr = 10000; // 10 ms
     if (delta > 10000)
     {
-      filteredGyro[0] = rxGyro;
-      filteredGyro[1] = ryGyro;
-      filteredGyro[2] = rzGyro;
-    } else
+      gyroVector = Vector3d(rxGyro, ryGyro, rzGyro);
+    }
+    else
     {
-      float d = delta/T_gyr;
-      filteredGyro[0] = d*rxGyro+(1-d)*filteredGyro[0];
-      filteredGyro[1] = d*ryGyro+(1-d)*filteredGyro[1];
-      filteredGyro[2] = d*rzGyro+(1-d)*filteredGyro[2];
+      float d = delta / T_gyr;
+      gyroVector = d * Vector3d(rxGyro, ryGyro, rzGyro) + (1 - d) * gyroVector;
     }
     if (delta > 100000) {
       x = rx;
@@ -698,17 +688,14 @@ public:
     yGyro = ryGyro * delta * PI / (1000000 * 180);
     // The zGyro has an offset of 0.0006 rad/s
     zGyro = rzGyro * delta * PI / (1000000 * 180) - 0.0006;
-    if (xGyro < GYRO_THRESHOLD && xGyro > -GYRO_THRESHOLD) xGyro = 0;
-    if (yGyro < GYRO_THRESHOLD && yGyro > -GYRO_THRESHOLD) yGyro = 0;
-    if (zGyro < GYRO_THRESHOLD && zGyro > -GYRO_THRESHOLD) zGyro = 0;
+    if (xGyro < GYRO_MEASUREMENT_THRESHOLD && xGyro > -GYRO_MEASUREMENT_THRESHOLD) xGyro = 0;
+    if (yGyro < GYRO_MEASUREMENT_THRESHOLD && yGyro > -GYRO_MEASUREMENT_THRESHOLD) yGyro = 0;
+    if (zGyro < GYRO_MEASUREMENT_THRESHOLD && zGyro > -GYRO_MEASUREMENT_THRESHOLD) zGyro = 0;
 
-    gravity = Coordinates(x, y, z);
+    gravity = Vector3d(x, y, z);
     Vector3d gyro = Vector3d(xGyro, yGyro, zGyro);
-    yaw += gravity.v.dot(gyro);
+    yaw += gravity.dot(gyro);
     yaw = fmod(yaw, 2 * PI);
-
-    rotateGyroAroundGravity(); //Sets the rotatedgyro array
-
 
     if (print) {
       Serial.print("raw gyro: ");
@@ -717,17 +704,23 @@ public:
       Serial.print(ryGyro);
       Serial.print("\t");
       Serial.println(rzGyro);
-      Serial.print("rotatedGyro: ");
-      Serial.print(rotatedGyro[0]);
+      Serial.print("gyro: ");
+      Serial.print(gyroVector(0));
       Serial.print("\t");
-      Serial.print(rotatedGyro[1]);
+      Serial.print(gyroVector(1));
       Serial.print("\t");
-      Serial.println(rotatedGyro[2]);
+      Serial.println(gyroVector(2));
       Serial.print(x);
+      Serial.print(" - ");
+      Serial.print(imu.readFloatAccelX());
       Serial.print("\t");
       Serial.print(y);
+      Serial.print(" - ");
+      Serial.print(imu.readFloatAccelY());
       Serial.print("\t");
       Serial.print(z);
+      Serial.print(" - ");
+      Serial.print(imu.readFloatAccelZ());
       Serial.print("\t-1\t1\t");
       Serial.print(xGyro * 1000);
       Serial.print("\t");
