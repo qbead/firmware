@@ -146,7 +146,7 @@ namespace Qbead {
 class Coordinates
 {
 public:
-Vector3d v;
+  Vector3d v;
 
   Coordinates(float argx, float argy, float argz)
   {
@@ -230,21 +230,6 @@ Vector3d v;
   void setPhi(float phi)
   {
     set(theta(), phi);
-  }
-
-  // This can be used to align the internal z-axis with gravity
-  Coordinates rotateRelativeTo(Vector3d other)
-  {
-    Vector3d ref = Vector3d(0, 0, -1);
-
-    // Normal case: Compute the axis and angle for rotation
-    Vector3d axis = other.cross(ref).normalized();
-    float angle = acos(other.dot(ref));
-
-    // Apply the rotation
-    AngleAxisd rotation = AngleAxisd(angle, axis);
-    Vector3d rotated = rotation * v;
-    return Coordinates(rotated);
   }
 };
 
@@ -337,11 +322,12 @@ public:
 
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
-  float rbuffer[3], rgyrobuffer[3], filteredGyro[3], rotatedGyro[3];
+  float rbuffer[3], rgyrobuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float xGyro, yGyro, zGyro, rxGyro, ryGyro, rzGyro; // filtered and raw gyro measurements, in units of deg/s
   float T_imu;             // last update from the IMU
-  Coordinates gravity = Coordinates(0, 0, 1); // gravity vector
+  Vector3d gravity = Vector3d(0, 0, 1); // gravity vector
+  Vector3d gyroVector = Vector3d(0, 0, 1); // gyro vector
   float yaw;
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
@@ -497,18 +483,9 @@ public:
     pixels.setBrightness(b);
   }
 
-  Coordinates getRelativeCoordinates(Coordinates c) {
-    c.setPhi(c.phi() + yaw);
-    if (gravity.x() > -0.95 && gravity.z() < 0.95) {
-      c.setPhi(c.phi() + gravity.phi());
-    }
-    return c.rotateRelativeTo(gravity.v);
-  }
-
   void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
-    Coordinates adjusted = getRelativeCoordinates(coordinates);
-    float theta = adjusted.theta() * 180 / PI;
-    float phi = adjusted.phi() * 180 / PI;
+    float theta = coordinates.theta() * 180 / PI;
+    float phi = coordinates.phi() * 180 / PI;
     if (phi < 0) {
       phi += 360;
     }
@@ -570,43 +547,23 @@ public:
     setBloch_deg(theta, phi, c, true);
   }
 
-  void rotateGyroAroundGravity()
-  {
-    Coordinates rotatedX = getRelativeCoordinates(Coordinates(1, 0, 0));
-    Coordinates rotatedY = getRelativeCoordinates(Coordinates(0, 1, 0));
-    Coordinates rotatedZ = getRelativeCoordinates(Coordinates(0, 0, 1));
-
-    rotatedGyro[0] = rotatedX.x()*filteredGyro[0] + rotatedX.y()*filteredGyro[1] + rotatedX.z()*filteredGyro[2];
-    rotatedGyro[1] = rotatedY.x()*filteredGyro[0] + rotatedY.y()*filteredGyro[1] + rotatedY.z()*filteredGyro[2];
-    rotatedGyro[2] = rotatedZ.x()*filteredGyro[0] + rotatedZ.y()*filteredGyro[1] + rotatedZ.z()*filteredGyro[2];
-  }
-
   bool checkRotation(QuantumState &toBeRotated)
   {
-    if (abs(rotatedGyro[0]) > 300)
+    if (abs(gyroVector[0]) > 300)
     {
-      if (Serial)
-      {
-        Serial.println("Executing X gate");
-      }
+      Serial.println("Executing X gate");
       toBeRotated.gateX();
       return true;
     }
-    if (abs(rotatedGyro[1]) > 300)
+    if (abs(gyroVector[1]) > 300)
     {
-      if (Serial)
-      {
-        Serial.println("Executing Y gate");
-      }
+      Serial.println("Executing Y gate");
       toBeRotated.gateY();
       return true;
     }
-    if (abs(rotatedGyro[2]) > 300)
+    if (abs(gyroVector[2]) > 300)
     {
-      if (Serial)
-      {
-        Serial.println("Executing Z gate");
-      }
+      Serial.println("Executing Z gate");
       toBeRotated.gateZ();
       return true;
     }
@@ -646,15 +603,12 @@ public:
     const float T_gyr = 10000; // 10 ms
     if (delta > 10000)
     {
-      filteredGyro[0] = rxGyro;
-      filteredGyro[1] = ryGyro;
-      filteredGyro[2] = rzGyro;
-    } else
+      gyroVector = Vector3d(rxGyro, ryGyro, rzGyro);
+    }
+    else
     {
-      float d = delta/T_gyr;
-      filteredGyro[0] = d*rxGyro+(1-d)*filteredGyro[0];
-      filteredGyro[1] = d*ryGyro+(1-d)*filteredGyro[1];
-      filteredGyro[2] = d*rzGyro+(1-d)*filteredGyro[2];
+      float d = delta / T_gyr;
+      gyroVector = d * Vector3d(rxGyro, ryGyro, rzGyro) + (1 - d) * gyroVector;
     }
     if (delta > 100000) {
       x = rx;
@@ -676,21 +630,18 @@ public:
     if (yGyro < GYRO_THRESHOLD && yGyro > -GYRO_THRESHOLD) yGyro = 0;
     if (zGyro < GYRO_THRESHOLD && zGyro > -GYRO_THRESHOLD) zGyro = 0;
 
-    gravity = Coordinates(x, y, z);
+    gravity = Vector3d(x, y, z);
     Vector3d gyro = Vector3d(xGyro, yGyro, zGyro);
-    yaw += gravity.v.dot(gyro);
+    yaw += gravity.dot(gyro);
     yaw = fmod(yaw, 2 * PI);
 
-    rotateGyroAroundGravity(); //Sets the rotatedgyro array
-
-
     if (print) {
-      Serial.print("rotatedGyro: ");
-      Serial.print(rotatedGyro[0]);
+      Serial.print("gyro: ");
+      Serial.print(gyroVector(0));
       Serial.print("\t");
-      Serial.print(rotatedGyro[1]);
+      Serial.print(gyroVector(1));
       Serial.print("\t");
-      Serial.println(rotatedGyro[2]);
+      Serial.println(gyroVector(2));
       Serial.print(x);
       Serial.print("\t");
       Serial.print(y);
