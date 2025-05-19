@@ -21,11 +21,12 @@ using namespace Eigen;
 #define QB_SY 0
 #define QB_SZ 1
 #define GYRO_MEASUREMENT_THRESHOLD 0.0001
-#define GYRO_GATE_THRESHOLD 400
+#define GYRO_GATE_THRESHOLD 7
 #define SHAKING_THRESHOLD 0.09
 #define QB_PIXEL_COUNT 62
-
 #define QB_MAX_PRPH_CONNECTION 2
+#define T_ACC 100000
+#define T_GYRO 10000
 
 const uint8_t QB_UUID_SERVICE[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
@@ -378,10 +379,8 @@ public:
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
   float rbuffer[3], rgyrobuffer[3];
-  float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
-  float xGyro, yGyro, zGyro, rxGyro, ryGyro, rzGyro; // filtered and raw gyro measurements, in units of deg/s
   float T_imu;             // last update from the IMU
-  Vector3d gravity = Vector3d(0, 0, 1); // gravity vector
+  Vector3d gravityVector = Vector3d(0, 0, 1); // gravity vector
   Vector3d gyroVector = Vector3d(0, 0, 1); // gyro vector
   float yaw;
 
@@ -610,20 +609,14 @@ public:
     setBloch_deg(theta, phi, c, true);
   }
 
-  Vector3d getGravity()
-  {
-    // substract gravity from the gravity vector
-    Vector3d g = gravity;
-    g.normalize();
-    return gravity - g;
-  }
-
   int checkMotion()
   {
+    // Handle tap interrupt
     if (interruptCount > prevInterruptCount)
     {
       uint8_t tapStatus = 0;
       myIMU.readRegister(&tapStatus, LSM6DS3_ACC_GYRO_TAP_SRC);
+      prevInterruptCount = interruptCount;
 
       if (tapStatus & 0x01)
       {
@@ -633,10 +626,10 @@ public:
       else
       {
         Serial.println("Executing H gate");
+        return 4;
       }
-      prevInterruptCount = interruptCount;
-      return 4;
     }
+    // Handle shaking
     if (abs(gyroVector[0]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing X gate");
@@ -655,6 +648,26 @@ public:
     return 0;
   }
 
+  void writeToBLE(BLECharacteristic& destination, Vector3d vector) {
+    float buffer[3] = {vector(0), vector(1), vector(2)};
+    destination.write(buffer, 3 * sizeof(float));
+    for (uint16_t conn_hdl = 0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    {
+      if (Bluefruit.connected(conn_hdl) && destination.notifyEnabled(conn_hdl))
+      {
+        destination.notify(buffer, 3 * sizeof(float));
+      }
+    }
+  }
+
+  Vector3d getVectorFromBuffer(float *buffer) {
+    // calibration of imu because imu is not aligned with bloch sphere
+    float rx = (1 - 2 * sx) * buffer[ix];
+    float ry = (1 - 2 * sy) * buffer[iy];
+    float rz = (1 - 2 * sz) * buffer[iz];
+    return Vector3d(rx, ry, rz);
+  }
+
   void readIMU(bool print=true) {
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
@@ -663,112 +676,37 @@ public:
     rgyrobuffer[1] = imu.readFloatGyroY();
     rgyrobuffer[2] = imu.readFloatGyroZ();
 
-    // calibration of imu because imu is not aligned with bloch sphere
-    rx = (1-2*sx)*rbuffer[ix];
-    ry = (1-2*sy)*rbuffer[iy];
-    rz = (1-2*sz)*rbuffer[iz];
-
-    // calibration of imu because imu is not aligned with bloch sphere
-    rxGyro = (1-2*sx)*rgyrobuffer[ix];
-    ryGyro = (1-2*sy)*rgyrobuffer[iy];
-    rzGyro = (1-2*sz)*rgyrobuffer[iz];
-    
     float T_new = micros();
     float delta = T_new - T_imu;
     T_imu = T_new;
-    // timefilter filter
-    const float T_acc = 100000; // 100 ms // TODO make the filter timeconstant configurable
-    const float T_gyr = 10000; // 10 ms
-    if (delta > 10000)
-    {
-      gyroVector = Vector3d(rxGyro, ryGyro, rzGyro);
-    }
-    else
-    {
-      float d = delta / T_gyr;
-      gyroVector = d * Vector3d(rxGyro, ryGyro, rzGyro) + (1 - d) * gyroVector;
-    }
-    if (delta > 100000) {
-      x = rx;
-      y = ry;
-      z = rz;
-    } else {
-      float d = delta/T_acc;
-      x = d*rx+(1-d)*x;
-      y = d*ry+(1-d)*y;
-      z = d*rz+(1-d)*z;
-    }
 
-    // Gyroscope
-    xGyro = rxGyro * delta * PI / (1000000 * 180);
-    yGyro = ryGyro * delta * PI / (1000000 * 180);
-    // The zGyro has an offset of 0.0006 rad/s
-    zGyro = rzGyro * delta * PI / (1000000 * 180) - 0.0006;
-    if (xGyro < GYRO_MEASUREMENT_THRESHOLD && xGyro > -GYRO_MEASUREMENT_THRESHOLD) xGyro = 0;
-    if (yGyro < GYRO_MEASUREMENT_THRESHOLD && yGyro > -GYRO_MEASUREMENT_THRESHOLD) yGyro = 0;
-    if (zGyro < GYRO_MEASUREMENT_THRESHOLD && zGyro > -GYRO_MEASUREMENT_THRESHOLD) zGyro = 0;
+    Vector3d newGyro = getVectorFromBuffer(rgyrobuffer) * PI / 180;
+    float d = min(delta / float(T_GYRO), 1.0f);
+    gyroVector = d * newGyro + (1 - d) * gyroVector; // low pass filter
 
-    gravity = Vector3d(x, y, z);
-    Vector3d gyro = Vector3d(xGyro, yGyro, zGyro);
-    yaw += gravity.dot(gyro);
+    Vector3d newGravity = getVectorFromBuffer(rbuffer);
+    d = min(delta / float(T_ACC), 1.0f);
+    gravityVector = d * newGravity + (1 - d) * gravityVector;
+
+    yaw += gravityVector.dot(gyroVector);
     yaw = fmod(yaw, 2 * PI);
 
     if (print) {
-      Serial.print("raw gyro: ");
-      Serial.print(rxGyro);
+      Serial.print(gravityVector(0));
       Serial.print("\t");
-      Serial.print(ryGyro);
+      Serial.print(gravityVector(1));
       Serial.print("\t");
-      Serial.println(rzGyro);
-      Serial.print("gyro: ");
+      Serial.print(gravityVector(2));
+      Serial.print("\t-1\t1\t");
       Serial.print(gyroVector(0));
       Serial.print("\t");
       Serial.print(gyroVector(1));
       Serial.print("\t");
       Serial.println(gyroVector(2));
-      Serial.print(x);
-      Serial.print(" - ");
-      Serial.print(imu.readFloatAccelX());
-      Serial.print("\t");
-      Serial.print(y);
-      Serial.print(" - ");
-      Serial.print(imu.readFloatAccelY());
-      Serial.print("\t");
-      Serial.print(z);
-      Serial.print(" - ");
-      Serial.print(imu.readFloatAccelZ());
-      Serial.print("\t-1\t1\t");
-      Serial.print(xGyro * 1000);
-      Serial.print("\t");
-      Serial.print(yGyro * 1000);
-      Serial.print("\t");
-      Serial.print(zGyro * 1000);
-      Serial.print("\t");
-      Serial.println(yaw * 180 / PI);
     }
 
-    rbuffer[0] = x;
-    rbuffer[1] = y;
-    rbuffer[2] = z;
-    blecharacc.write(rbuffer, 3*sizeof(float));
-    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
-      {
-        blecharacc.notify(rbuffer, 3*sizeof(float));
-      }
-    }
-    rgyrobuffer[0] = xGyro;
-    rgyrobuffer[1] = yGyro;
-    rgyrobuffer[2] = zGyro;
-    blechargyr.write(rgyrobuffer, 3*sizeof(float));
-    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if ( Bluefruit.connected(conn_hdl) && blechargyr.notifyEnabled(conn_hdl) )
-      {
-        blechargyr.notify(rbuffer, 3*sizeof(float));
-      }
-    }
+    writeToBLE(blecharacc, gravityVector);
+    writeToBLE(blechargyr, gyroVector);
   }
 
   void startBLEadv(void)

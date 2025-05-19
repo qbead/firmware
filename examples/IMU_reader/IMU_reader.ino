@@ -26,6 +26,6 @@ void setup() {
 void loop() {
   bead.readIMU();
   bead.clear();
-  bead.setLed(Qbead::Coordinates(bead.gravity), color(255, 0, 255), true);
+  bead.setLed(Qbead::Coordinates(bead.gravityVector), color(255, 0, 255), true);
   bead.show();
 }

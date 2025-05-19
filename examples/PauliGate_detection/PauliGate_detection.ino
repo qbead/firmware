@@ -65,7 +65,7 @@ void setup() {
 }
 
 void loop() {
-  bead.readIMU(false);
+  bead.readIMU(true);
   bead.clear();
   bead.showAxis();
   stateColor = color(255, 255, 255);
