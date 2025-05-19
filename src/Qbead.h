@@ -14,9 +14,9 @@ using namespace Eigen;
 #define QB_LEDPIN 10
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
 #define QB_IMU_ADDR 0x6A
-#define QB_IX 0
-#define QB_IY 2
-#define QB_IZ 1
+#define QB_IX 1
+#define QB_IY 0
+#define QB_IZ 2
 #define QB_SX 0
 #define QB_SY 0
 #define QB_SZ 1
@@ -41,8 +41,9 @@ const uint8_t QB_UUID_GYR_CHAR[] =
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
 // TODO manage namespaces better
+// The setPixelColor switches blue and green
 static uint32_t color(uint8_t r, uint8_t g, uint8_t b) {
-  return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+  return ((uint32_t)r << 16) | ((uint16_t)b << 8) | g;
 }
 
 static uint8_t redch(uint32_t rgb) {
@@ -153,7 +154,7 @@ void setupTapInterrupt() {
   // Double Tap Config
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60);
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x8E);// INTERRUPTS_ENABLE, SLOPE_FDS
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x8C);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x6C);
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x80);
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x08);
@@ -391,68 +392,68 @@ public:
   // led map index to Coordinates
   // This map is for the first version of the pcb
   Coordinates led_map_v1[62] = {
-    Coordinates(PI, 0),
-    Coordinates(5 * PI / 6, 9 * PI / 6),
-    Coordinates(4 * PI / 6, 9 * PI / 6),
-    Coordinates(3 * PI / 6, 9 * PI / 6),
-    Coordinates(2 * PI / 6, 9 * PI / 6),
-    Coordinates(PI / 6, 9 * PI / 6),
-    Coordinates(0, 0),
-    Coordinates(5 * PI / 6, 10 * PI / 6),
-    Coordinates(4 * PI / 6, 10 * PI / 6),
-    Coordinates(3 * PI / 6, 10 * PI / 6),
-    Coordinates(2 * PI / 6, 10 * PI / 6),
-    Coordinates(PI / 6, 10 * PI / 6),
-    Coordinates(5 * PI / 6, 11 * PI / 6),
-    Coordinates(4 * PI / 6, 11 * PI / 6),
-    Coordinates(3 * PI / 6, 11 * PI / 6),
-    Coordinates(2 * PI / 6, 11 * PI / 6),
-    Coordinates(PI / 6, 11 * PI / 6),
-    Coordinates(5 * PI / 6, 0),
-    Coordinates(4 * PI / 6, 0),
-    Coordinates(3 * PI / 6, 0),
-    Coordinates(2 * PI / 6, 0),
-    Coordinates(PI / 6, 0),
-    Coordinates(5 * PI / 6, PI / 6),
-    Coordinates(4 * PI / 6, PI / 6),
-    Coordinates(3 * PI / 6, PI / 6),
-    Coordinates(2 * PI / 6, PI / 6),
-    Coordinates(PI / 6, PI / 6),
-    Coordinates(5 * PI / 6, 2 * PI / 6),
-    Coordinates(4 * PI / 6, 2 * PI / 6),
-    Coordinates(3 * PI / 6, 2 * PI / 6),
-    Coordinates(2 * PI / 6, 2 * PI / 6),
-    Coordinates(PI / 6, 2 * PI / 6),
-    Coordinates(5 * PI / 6, 3 * PI / 6),
-    Coordinates(4 * PI / 6, 3 * PI / 6),
-    Coordinates(3 * PI / 6, 3 * PI / 6),
-    Coordinates(2 * PI / 6, 3 * PI / 6),
-    Coordinates(PI / 6, 3 * PI / 6),
-    Coordinates(5 * PI / 6, 4 * PI / 6),
-    Coordinates(4 * PI / 6, 4 * PI / 6),
-    Coordinates(3 * PI / 6, 4 * PI / 6),
-    Coordinates(2 * PI / 6, 4 * PI / 6),
-    Coordinates(PI / 6, 4 * PI / 6),
-    Coordinates(5 * PI / 6, 5 * PI / 6),
-    Coordinates(4 * PI / 6, 5 * PI / 6),
-    Coordinates(3 * PI / 6, 5 * PI / 6),
-    Coordinates(2 * PI / 6, 5 * PI / 6),
-    Coordinates(PI / 6, 5 * PI / 6),
-    Coordinates(5 * PI / 6, 6 * PI / 6),
-    Coordinates(4 * PI / 6, 6 * PI / 6),
-    Coordinates(3 * PI / 6, 6 * PI / 6),
-    Coordinates(2 * PI / 6, 6 * PI / 6),
-    Coordinates(PI / 6, 6 * PI / 6),
-    Coordinates(5 * PI / 6, 7 * PI / 6),
-    Coordinates(4 * PI / 6, 7 * PI / 6),
-    Coordinates(3 * PI / 6, 7 * PI / 6),
-    Coordinates(2 * PI / 6, 7 * PI / 6),
-    Coordinates(PI / 6, 7 * PI / 6),
-    Coordinates(5 * PI / 6, 8 * PI / 6),
-    Coordinates(4 * PI / 6, 8 * PI / 6),
-    Coordinates(3 * PI / 6, 8 * PI / 6),
-    Coordinates(2 * PI / 6, 8 * PI / 6),
-    Coordinates(PI / 6, 8 * PI / 6),
+    Coordinates(-1, -0, -0),
+    Coordinates(-0.866, 0, -0.5),
+    Coordinates(-0.5, 0, -0.866),
+    Coordinates(-0, 0, -1),
+    Coordinates(0.5, 0, -0.866),
+    Coordinates(0.866, 0, -0.5),
+    Coordinates(1, 0, 0),
+    Coordinates(-0.866, 0.25, -0.433),
+    Coordinates(-0.5, 0.433, -0.75),
+    Coordinates(-0, 0.5, -0.866),
+    Coordinates(0.5, 0.433, -0.75),
+    Coordinates(0.866, 0.25, -0.433),
+    Coordinates(-0.866, 0.433, -0.25),
+    Coordinates(-0.5, 0.75, -0.433),
+    Coordinates(-0, 0.866, -0.5),
+    Coordinates(0.5, 0.75, -0.433),
+    Coordinates(0.866, 0.433, -0.25),
+    Coordinates(-0.866, 0.5, 0),
+    Coordinates(-0.5, 0.866, 0),
+    Coordinates(-0, 1, 0),
+    Coordinates(0.5, 0.866, 0),
+    Coordinates(0.866, 0.5, 0),
+    Coordinates(-0.866, 0.433, 0.25),
+    Coordinates(-0.5, 0.75, 0.433),
+    Coordinates(-0, 0.866, 0.5),
+    Coordinates(0.5, 0.75, 0.433),
+    Coordinates(0.866, 0.433, 0.25),
+    Coordinates(-0.866, 0.25, 0.433),
+    Coordinates(-0.5, 0.433, 0.75),
+    Coordinates(-0, 0.5, 0.866),
+    Coordinates(0.5, 0.433, 0.75),
+    Coordinates(0.866, 0.25, 0.433),
+    Coordinates(-0.866, -0, 0.5),
+    Coordinates(-0.5, -0, 0.866),
+    Coordinates(-0, -0, 1),
+    Coordinates(0.5, -0, 0.866),
+    Coordinates(0.866, -0, 0.5),
+    Coordinates(-0.866, -0.25, 0.433),
+    Coordinates(-0.5, -0.433, 0.75),
+    Coordinates(-0, -0.5, 0.866),
+    Coordinates(0.5, -0.433, 0.75),
+    Coordinates(0.866, -0.25, 0.433),
+    Coordinates(-0.866, -0.433, 0.25),
+    Coordinates(-0.5, -0.75, 0.433),
+    Coordinates(-0, -0.866, 0.5),
+    Coordinates(0.5, -0.75, 0.433),
+    Coordinates(0.866, -0.433, 0.25),
+    Coordinates(-0.866, -0.5, -0),
+    Coordinates(-0.5, -0.866, -0),
+    Coordinates(-0, -1, -0),
+    Coordinates(0.5, -0.866, -0),
+    Coordinates(0.866, -0.5, -0),
+    Coordinates(-0.866, -0.433, -0.25),
+    Coordinates(-0.5, -0.75, -0.433),
+    Coordinates(-0, -0.866, -0.5),
+    Coordinates(0.5, -0.75, -0.433),
+    Coordinates(0.866, -0.433, -0.25),
+    Coordinates(-0.866, -0.25, -0.433),
+    Coordinates(-0.5, -0.433, -0.75),
+    Coordinates(-0, -0.5, -0.866),
+    Coordinates(0.5, -0.433, -0.75),
+    Coordinates(0.866, -0.25, -0.433),
   };
 
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
@@ -556,12 +557,12 @@ public:
   }
 
   void showAxis() {
-    setLed(Coordinates(0, 0, 1), color(255, 0, 0));
+    setLed(Coordinates(1, 0, 0), color(0, 0, 122));
+    setLed(Coordinates(-1, 0, 0), color(0, 0, 122));
+    setLed(Coordinates(0, 1, 0), color(0, 0, 122));
+    setLed(Coordinates(0, -1, 0), color(0, 0, 122));
+    setLed(Coordinates(0, 0, 1), color(0, 255, 0));
     setLed(Coordinates(0, 0, -1), color(255, 0, 0));
-    setLed(Coordinates(0, 1, 0), color(0, 255, 0));
-    setLed(Coordinates(0, -1, 0), color(0, 255, 0));
-    setLed(Coordinates(1, 0, 0), color(0, 0, 255));
-    setLed(Coordinates(-1, 0, 0), color(0, 0, 255));
   }
 
   // in rads
@@ -625,15 +626,15 @@ public:
       uint8_t tapStatus = 0;
       myIMU.readRegister(&tapStatus, LSM6DS3_ACC_GYRO_TAP_SRC);
 
-      if (tapStatus & 0x05)
-      {
-        Serial.println("Executing H gate");
-        toBeRotated.gateH();
-      }
-      else
+      if (tapStatus & 0x01)
       {
         Serial.println("Collapsing");
         toBeRotated.collapse();
+      }
+      else
+      {
+        Serial.println("Executing H gate");
+        toBeRotated.gateH();
       }
       prevInterruptCount = interruptCount;
       return true;
