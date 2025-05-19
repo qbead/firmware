@@ -1,26 +1,44 @@
 #include <Qbead.h>
 
 Qbead::Qbead bead;
-Qbead::QuantumState state = Qbead::QuantumState(Qbead::Coordinates(1, 2.3));
-bool freeze = 0;
-float timeIMU = 0;
-float counter = 0;
-uint32_t cooldownColor = color(255, 255, 255);
+Qbead::QuantumState state = Qbead::QuantumState(Qbead::Coordinates(1, 0));
+int rotationState;
+uint32_t stateColor = color(255, 255, 255);
 const bool toggleAnimationOn = 1;
 
 
-void animationGate(Qbead::Coordinates oldPoint, int steps, int animationLength)
+void animationGate(int gateType, int steps, int animationLength)
 {
+  if (gateType == 5)
+  {
+    state.collapse();
+    return;
+  }
+  if (!toggleAnimationOn)
+  {
+    steps = 1;
+  }
+  float stepLength = M_PI / (float) steps;
+  stateColor = color(255, 0, 255);
   for (int i = 0; i < steps; i++)
   {
     bead.clear();
-    float q = i/ (float) steps;
-    float newTheta = q*state.getCoordinates().theta() + (1-q)*oldPoint.theta();
-    float newPhi = q*state.getCoordinates().phi() + (1-q)*oldPoint.phi();
-    Qbead::Coordinates animationPoint = Qbead::Coordinates(newTheta, newPhi);
-    bead.setLed(animationPoint, color(255, 255, 0), true);
-    bead.readIMU(false);
     bead.showAxis();
+    switch (gateType)
+    {
+      case 1:
+        state.gateX(stepLength);
+        break;
+      case 2:
+        state.gateY(stepLength);
+        break;
+      case 3:
+        state.gateZ(stepLength);
+        break;
+      case 4:
+        state.gateH(stepLength);
+    }
+    bead.setLed(state.getCoordinates(), stateColor);
     bead.show();
     delay(animationLength/steps);
   }
@@ -50,29 +68,12 @@ void loop() {
   bead.readIMU(false);
   bead.clear();
   bead.showAxis();
-  if (freeze)
+  stateColor = color(255, 255, 255);
+  rotationState = bead.checkMotion();
+  if (rotationState != 0) 
   {
-    cooldownColor = color(255, 255, 0);
-    float newTime = micros();
-    counter += newTime - timeIMU;
-    timeIMU = newTime;
-    prevInterruptCount = interruptCount;
-    if (counter > 3000000)
-    {
-      counter = 0;
-      freeze = 0;
-    }
-  } else
-  {
-    Qbead::QuantumState oldState = state;
-    cooldownColor = color(255, 255, 255);
-    freeze = bead.checkMotion(state);
-    timeIMU = micros();
-    if (freeze && toggleAnimationOn)
-    {
-      animationGate(oldState.getCoordinates(), 30, 4000);
-    }
+    animationGate(rotationState, 10, 4000);
   }
-  bead.setLed(state.getCoordinates(), cooldownColor);
+  bead.setLed(state.getCoordinates(), stateColor);
   bead.show();
 }
