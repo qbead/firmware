@@ -305,37 +305,37 @@ public:
   {
     Matrix2cf gateMatrix;
     gateMatrix << cos(rotationDegree/2.0f), -sin(rotationDegree/2.0f)*i, 
-                  -sin(rotationDegree/2.0f)*i, cos(rotationDegree/2.0f);
+                  -sin(rotationDegree/2.0f)*i, cos(rotationDegree/2.0f); // gloabal phase differs from pauli gates but thid doesn't matter for bloch sphere
     applyGate(gateMatrix);
     //stateCoordinates.set(stateCoordinates.x(), -stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the y axis
-  void gateZ(float rotationFraction = PI)
+  void gateZ(float rotationDegree = PI)
   { 
     Matrix2cf gateMatrix;
-    gateMatrix << exp(-i*rotationFraction/2.0f), 0, 
-                  0, exp(i*rotationFraction/2.0f);
+    gateMatrix << exp(-i*rotationDegree/2.0f), 0, 
+                  0, exp(i*rotationDegree/2.0f);
     applyGate(gateMatrix);
     //stateCoordinates.set(-stateCoordinates.x(), -stateCoordinates.y(), stateCoordinates.z());
   }
 
   // Rotate PI around the z axis
-  void gateY(float rotationFraction = PI)
+  void gateY(float rotationDegree = PI)
   {
     Matrix2cf gateMatrix;
-    gateMatrix << cos(rotationFraction/2.0f), -sin(rotationFraction/2.0f),
-                  sin(rotationFraction/2.0f), cos(rotationFraction/2.0f);
+    gateMatrix << cos(rotationDegree/2.0f), -sin(rotationDegree/2.0f),
+                  sin(rotationDegree/2.0f), cos(rotationDegree/2.0f);
     applyGate(gateMatrix);
     //stateCoordinates.set(-stateCoordinates.x(), stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the xz axis
-  void gateH(float rotationFraction = 1)
+  void gateH(float rotationDegree = PI)
   {
     Matrix2cf gateMatrix;
-    gateMatrix << std::complex<float>(1/sqrt(2), 0), std::complex<float>(1/sqrt(2), 0), 
-                  std::complex<float>(1/sqrt(2), 0), std::complex<float>(-1/sqrt(2), 0);
+    gateMatrix << (cos(rotationDegree/2.0f) - i*sin(rotationDegree/2.0f)/sqrt(2.0f)), -i*sin(rotationDegree/2.0f)/sqrt(2.0f), 
+                  -i*sin(rotationDegree/2.0f)/sqrt(2.0f), (cos(rotationDegree/2.0f) + i*sin(rotationDegree/2.0f)/sqrt(2.0f));
     applyGate(gateMatrix);
     //stateCoordinates.set(stateCoordinates.z(), stateCoordinates.y(), stateCoordinates.x()); //flip x and z axis
   }
@@ -618,7 +618,7 @@ public:
     return gravity - g;
   }
 
-  bool checkMotion(QuantumState &toBeRotated)
+  int checkMotion()
   {
     if (interruptCount > prevInterruptCount)
     {
@@ -628,35 +628,31 @@ public:
       if (tapStatus & 0x01)
       {
         Serial.println("Collapsing");
-        toBeRotated.collapse();
+        return 5;
       }
       else
       {
         Serial.println("Executing H gate");
-        toBeRotated.gateH();
       }
       prevInterruptCount = interruptCount;
-      return true;
+      return 4;
     }
     if (abs(gyroVector[0]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing X gate");
-      toBeRotated.gateX();
-      return true;
+      return 1;
     }
     if (abs(gyroVector[1]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing Y gate");
-      toBeRotated.gateY();
-      return true;
+      return 2;
     }
     if (abs(gyroVector[2]) > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing Z gate");
-      toBeRotated.gateZ();
-      return true;
+      return 3;
     }
-    return false;
+    return 0;
   }
 
   void readIMU(bool print=true) {
