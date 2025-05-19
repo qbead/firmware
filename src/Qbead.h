@@ -346,23 +346,15 @@ class Qbead {
 public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
         const uint16_t pixelconfig = QB_PIXELCONFIG,
-        const uint8_t imu_addr = QB_IMU_ADDR,
-        const uint8_t ix = QB_IX,
-        const uint8_t iy = QB_IY,
-        const uint8_t iz = QB_IZ,
-        const bool sx = QB_SX,
-        const bool sy = QB_SY,
-        const bool sz = QB_SZ)
+        const uint8_t imu_addr = QB_IMU_ADDR)
       : imu(LSM6DS3(I2C_MODE, imu_addr)),
         pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig)),
-        ix(ix), iy(iy), iz(iz),
-        sx(sx), sy(sy), sz(sz),
         bleservice(QB_UUID_SERVICE),
         blecharcol(QB_UUID_COL_CHAR),
         blecharsph(QB_UUID_SPH_CHAR),
         blecharacc(QB_UUID_ACC_CHAR),
         blechargyr(QB_UUID_GYR_CHAR)
-        {}
+  {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
@@ -376,8 +368,6 @@ public:
   BLECharacteristic blechargyr;
   uint8_t connection_count = 0;
 
-  const uint8_t ix, iy, iz;
-  const bool sx, sy, sz;
   float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
   Vector3d gravityVector = Vector3d(0, 0, 1); // gravity vector
@@ -630,20 +620,12 @@ public:
       }
     }
     // Handle shaking
-    if (abs(gyroVector[0]) > GYRO_GATE_THRESHOLD)
+    for (int i = 0; i < 3; i++)
     {
-      Serial.println("Executing X gate");
-      return 1;
-    }
-    if (abs(gyroVector[1]) > GYRO_GATE_THRESHOLD)
-    {
-      Serial.println("Executing Y gate");
-      return 2;
-    }
-    if (abs(gyroVector[2]) > GYRO_GATE_THRESHOLD)
-    {
-      Serial.println("Executing Z gate");
-      return 3;
+      if (abs(gyroVector[i]) > GYRO_GATE_THRESHOLD)
+      {
+        return i + 1; // 1 = x, 2 = y, 3 = z
+      }
     }
     return 0;
   }
@@ -662,9 +644,9 @@ public:
 
   Vector3d getVectorFromBuffer(float *buffer) {
     // calibration of imu because imu is not aligned with bloch sphere
-    float rx = (1 - 2 * sx) * buffer[ix];
-    float ry = (1 - 2 * sy) * buffer[iy];
-    float rz = (1 - 2 * sz) * buffer[iz];
+    float rx = (1 - 2 * QB_SX) * buffer[QB_IX];
+    float ry = (1 - 2 * QB_SY) * buffer[QB_IY];
+    float rz = (1 - 2 * QB_SZ) * buffer[QB_IZ];
     return Vector3d(rx, ry, rz);
   }
 

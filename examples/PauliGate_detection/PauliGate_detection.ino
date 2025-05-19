@@ -27,12 +27,15 @@ void animationGate(int gateType, int steps, int animationLength)
     switch (gateType)
     {
       case 1:
+        Serial.println("Executing X gate");
         state.gateX(stepLength);
         break;
       case 2:
+        Serial.println("Executing Y gate");
         state.gateY(stepLength);
         break;
       case 3:
+        Serial.println("Executing Z gate");
         state.gateZ(stepLength);
         break;
       case 4:
