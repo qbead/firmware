@@ -472,6 +472,16 @@ public:
     Serial.println(singletoninstance->p_ble);
   }
 
+  void startAccelerometer() {
+    // BLE Characteristic IMU xyz accelerometer readout
+    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharacc.setUserDescriptor("xyz acceleration");
+    blecharacc.setFixedLen(3*sizeof(float));
+    blecharacc.begin();
+    blecharacc.write(zerobuffer20, 3*sizeof(float));    
+  }
+
   void begin() {
     singletoninstance = this;
     Serial.begin(9600);
@@ -509,13 +519,6 @@ public:
     blecharsph.setWriteCallback(ble_callback_theta_phi);
     blecharsph.begin();
     blecharsph.write(zerobuffer20, 2);
-    // BLE Characteristic IMU xyz accelerometer readout
-    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharacc.setUserDescriptor("xyz acceleration");
-    blecharacc.setFixedLen(3*sizeof(float));
-    blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3*sizeof(float));    
     // BLE Characteristic IMU xyz gyroscope readout
     blechargyr.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
     blechargyr.setPermission(SECMODE_OPEN, SECMODE_OPEN);
@@ -617,9 +620,21 @@ public:
 
   bool checkMotion(QuantumState &toBeRotated)
   {
-    if (interruptCount > prevInterruptCount) {
-      Serial.println("Interrupt received!");
-      toBeRotated.collapse();
+    if (interruptCount > prevInterruptCount)
+    {
+      uint8_t tapStatus = 0;
+      myIMU.readRegister(&tapStatus, LSM6DS3_ACC_GYRO_TAP_SRC);
+
+      if (tapStatus & 0x05)
+      {
+        Serial.println("Executing H gate");
+        toBeRotated.gateH();
+      }
+      else
+      {
+        Serial.println("Collapsing");
+        toBeRotated.collapse();
+      }
       prevInterruptCount = interruptCount;
       return true;
     }
