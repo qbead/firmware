@@ -56,6 +56,7 @@ void loop() {
     float newTime = micros();
     counter += newTime - timeIMU;
     timeIMU = newTime;
+    prevInterruptCount = interruptCount;
     if (counter > 3000000)
     {
       counter = 0;
