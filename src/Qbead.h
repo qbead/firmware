@@ -194,31 +194,16 @@ public:
     v.normalize();
   }
 
-  float x()
-  {
-    return v(0);
-  }
-
-  float y()
-  {
-    return v(1);
-  }
-
-  float z()
-  {
-    return v(2);
-  }
-
   // In rads
   float theta()
   {
-    return acos(z());
+    return acos(v(2));
   }
 
   // In rads
   float phi()
   {
-    return atan2(y(), x());
+    return atan2(v(1), v(0));
   }
 
   Vector2cf stateVector2D()
@@ -305,40 +290,36 @@ public:
   void gateX(float rotationDegree = PI)
   {
     Matrix2cf gateMatrix;
-    gateMatrix << cos(rotationDegree/2.0f), -sin(rotationDegree/2.0f)*i, 
-                  -sin(rotationDegree/2.0f)*i, cos(rotationDegree/2.0f); // gloabal phase differs from pauli gates but thid doesn't matter for bloch sphere
+    gateMatrix << cos(rotationDegree / 2.0f), -sin(rotationDegree / 2.0f) * i,
+        -sin(rotationDegree / 2.0f) * i, cos(rotationDegree / 2.0f); // gloabal phase differs from pauli gates but thid doesn't matter for bloch sphere
     applyGate(gateMatrix);
-    //stateCoordinates.set(stateCoordinates.x(), -stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the y axis
   void gateZ(float rotationDegree = PI)
-  { 
+  {
     Matrix2cf gateMatrix;
-    gateMatrix << exp(-i*rotationDegree/2.0f), 0, 
-                  0, exp(i*rotationDegree/2.0f);
+    gateMatrix << exp(-i * rotationDegree / 2.0f), 0,
+        0, exp(i * rotationDegree / 2.0f);
     applyGate(gateMatrix);
-    //stateCoordinates.set(-stateCoordinates.x(), -stateCoordinates.y(), stateCoordinates.z());
   }
 
   // Rotate PI around the z axis
   void gateY(float rotationDegree = PI)
   {
     Matrix2cf gateMatrix;
-    gateMatrix << cos(rotationDegree/2.0f), -sin(rotationDegree/2.0f),
-                  sin(rotationDegree/2.0f), cos(rotationDegree/2.0f);
+    gateMatrix << cos(rotationDegree / 2.0f), -sin(rotationDegree / 2.0f),
+        sin(rotationDegree / 2.0f), cos(rotationDegree / 2.0f);
     applyGate(gateMatrix);
-    //stateCoordinates.set(-stateCoordinates.x(), stateCoordinates.y(), -stateCoordinates.z());
   }
 
   // Rotate PI around the xz axis
   void gateH(float rotationDegree = PI)
   {
     Matrix2cf gateMatrix;
-    gateMatrix << (cos(rotationDegree/2.0f) - i*sin(rotationDegree/2.0f)/sqrt(2.0f)), -i*sin(rotationDegree/2.0f)/sqrt(2.0f), 
-                  -i*sin(rotationDegree/2.0f)/sqrt(2.0f), (cos(rotationDegree/2.0f) + i*sin(rotationDegree/2.0f)/sqrt(2.0f));
+    gateMatrix << (cos(rotationDegree / 2.0f) - i * sin(rotationDegree / 2.0f) / sqrt(2.0f)), -i * sin(rotationDegree / 2.0f) / sqrt(2.0f),
+        -i * sin(rotationDegree / 2.0f) / sqrt(2.0f), (cos(rotationDegree / 2.0f) + i * sin(rotationDegree / 2.0f) / sqrt(2.0f));
     applyGate(gateMatrix);
-    //stateCoordinates.set(stateCoordinates.z(), stateCoordinates.y(), stateCoordinates.x()); //flip x and z axis
   }
 };
 
