@@ -1,69 +1,9 @@
 #include <Qbead.h>
 
 Qbead::Qbead bead;
-Qbead::QuantumState state = Qbead::QuantumState(Qbead::Coordinates(1, 0));
-int rotationState;
+int rotationState = 0;
 uint32_t stateColor = color(255, 255, 255);
 const bool toggleAnimationOn = 1;
-
-
-void animationGate(int gateType, int steps, int animationLength)
-{
-  if (gateType == 8)
-  {
-    state.collapse();
-    return;
-  }
-  if (!toggleAnimationOn)
-  {
-    steps = 1;
-  }
-  float stepLength = M_PI / (float) steps;
-  stateColor = color(255, 0, 255);
-  for (int i = 0; i < steps; i++)
-  {
-    bead.clear();
-    bead.showAxis();
-    switch (gateType)
-    {
-      case 1:
-        Serial.print("Executing X gate, progress: ");
-        Serial.println(i/(float)steps);
-        state.gateX(-stepLength);
-        break;
-      case 2:
-        Serial.print("Executing Y gate, progress: ");
-        Serial.println(i/(float)steps);
-        state.gateY(-stepLength);
-        break;
-      case 6:
-        Serial.print("Executing Z gate, progress: ");
-        Serial.println(i/(float)steps);
-        state.gateZ(-stepLength);
-        break;
-      case 4:
-        Serial.print("Executing X gate, progress: ");
-        Serial.println(i/(float)steps);
-        state.gateX(stepLength);
-        break;
-      case 5:
-        Serial.print("Executing Y gate, progress: ");
-        Serial.println(i/(float)steps);
-        state.gateY(stepLength);
-        break;
-      case 3:
-        Serial.print("Executing Z gate, progress: ");
-        Serial.println(i/(float)steps);
-        state.gateZ(stepLength);
-        break;
-      case 7:
-        state.gateH(stepLength);
-    }
-    bead.setLed(state.getCoordinates(), stateColor);
-    bead.show();
-    delay(animationLength/steps);
-  }
-}
 
 void setup() {
   bead.begin();
@@ -86,15 +26,26 @@ void setup() {
 }
 
 void loop() {
-  bead.readIMU(true);
+  bead.readIMU(false);
   bead.clear();
   bead.showAxis();
   stateColor = color(255, 255, 255);
-  rotationState = bead.checkMotion();
-  if (rotationState != 0) 
+  Serial.print("rotationState: ");
+  Serial.println(rotationState);
+  if (!bead.frozen)
   {
-    animationGate(rotationState, 10, 4000);
+    rotationState = bead.checkMotion();
+    if (rotationState != 0)
+    {
+      bead.frozen = true;
+      bead.T_freeze = millis();
+    }
   }
-  bead.setLed(state.getCoordinates(), stateColor);
+  else
+  {
+    stateColor = color(122, 122, 0);
+  }
+  bead.animateTo(rotationState, 2000);
+  bead.setLed(bead.visualState, stateColor);
   bead.show();
 }

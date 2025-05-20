@@ -286,12 +286,42 @@ public:
     stateCoordinates.set(2*acos(abs(stateVector.x())), arg(stateVector.y()) - arg(stateVector.x()));
   }
 
+  void applyGateType(uint16_t gateType, float rotationDegree = PI)
+  {
+    switch (gateType)
+    {
+    case 1:
+      gateX(-rotationDegree);
+      break;
+    case 2:
+      gateY(-rotationDegree);
+      break;
+    case 3:
+      gateZ(rotationDegree);
+      break;
+    case 4:
+      gateX(rotationDegree);
+      break;
+    case 5:
+      gateY(rotationDegree);
+      break;
+    case 6:
+      gateZ(-rotationDegree);
+      break;
+    case 7:
+      gateH(rotationDegree);
+      break;
+    default:
+      break;
+    }
+  }
+
   // Rotate PI around the x axis
   void gateX(float rotationDegree = PI)
   {
     Matrix2cf gateMatrix;
     gateMatrix << cos(rotationDegree / 2.0f), -sin(rotationDegree / 2.0f) * i,
-        -sin(rotationDegree / 2.0f) * i, cos(rotationDegree / 2.0f); // gloabal phase differs from pauli gates but thid doesn't matter for bloch sphere
+        -sin(rotationDegree / 2.0f) * i, cos(rotationDegree / 2.0f); // global phase differs from pauli gates but this doesn't matter for bloch sphere
     applyGate(gateMatrix);
   }
 
@@ -351,9 +381,13 @@ public:
 
   float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
-  Vector3d gravityVector = Vector3d(0, 0, 1); // gravity vector
-  Vector3d gyroVector = Vector3d(0, 0, 1); // gyro vector
-  float yaw;
+  float T_freeze = 0;
+  bool frozen = false; // frozen means that there is an animation in progress
+  QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
+  Coordinates visualState = Coordinates(-0.866, 0.25, -0.433);
+  Vector3d gravityVector = Vector3d(0, 0, 1);
+  Vector3d gyroVector = Vector3d(0, 0, 1);
+  float yaw = 0;
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
@@ -584,8 +618,35 @@ public:
     setBloch_deg(theta, phi, c, true);
   }
 
+  void animateTo(uint8_t gate, uint16_t animationLength = 2000)
+  {
+    if (!frozen || gate == 0)
+    {
+      return;
+    }
+    float T_new = millis();
+    float delta = T_new - T_freeze;
+    if (delta > animationLength)
+    {
+      frozen = false;
+      state.applyGateType(gate);
+      Serial.println("Animation finished");
+      return;
+    }
+    float d = delta * PI / float(animationLength);
+    QuantumState from = state;
+    from.applyGateType(gate, d);
+    visualState.set(from.getCoordinates().v);
+  }
+
   int checkMotion()
   {
+    if (frozen)
+    {
+      return 0;
+    }
+    frozen = true;
+    T_freeze = micros();
     // Handle tap interrupt
     if (interruptCount > prevInterruptCount)
     {
@@ -619,6 +680,7 @@ public:
         return i + 4; // 4 = x, 5 = y, 6 = -z
       }
     }
+    frozen = false;
     return 0;
   }
 
