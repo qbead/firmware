@@ -664,7 +664,7 @@ public:
   }
 
   void writeToBLE(BLECharacteristic& destination, Vector3d vector) {
-    float buffer[3] = {vector(0), vector(1), vector(2)};
+    float buffer[3] = {(float)vector(0), (float)vector(1), (float)vector(2)};
     destination.write(buffer, 3 * sizeof(float));
     for (uint16_t conn_hdl = 0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
     {
