@@ -621,26 +621,41 @@ public:
       if (tapStatus & 0x01)
       {
         Serial.println("Collapsing");
-        return 5;
+        return 8;
       }
       else
       {
         Serial.println("Executing H gate");
-        return 4;
+        return 7;
       }
     }
     // Handle shaking
-    if (abs(gyroVector[0]) > GYRO_GATE_THRESHOLD)
+    if (gyroVector[0] > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing X gate");
       return 1;
     }
-    if (abs(gyroVector[1]) > GYRO_GATE_THRESHOLD)
+    if (gyroVector[1] > GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing Y gate");
       return 2;
     }
-    if (abs(gyroVector[2]) > GYRO_GATE_THRESHOLD)
+    if (gyroVector[2] > GYRO_GATE_THRESHOLD)
+    {
+      Serial.println("Executing Z gate");
+      return 6;
+    }
+    if (gyroVector[0] < -GYRO_GATE_THRESHOLD)
+    {
+      Serial.println("Executing X gate");
+      return 4;
+    }
+    if (gyroVector[1] < -GYRO_GATE_THRESHOLD)
+    {
+      Serial.println("Executing Y gate");
+      return 5;
+    }
+    if (gyroVector[2] < -GYRO_GATE_THRESHOLD)
     {
       Serial.println("Executing Z gate");
       return 3;

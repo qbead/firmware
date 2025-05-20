@@ -9,7 +9,7 @@ const bool toggleAnimationOn = 1;
 
 void animationGate(int gateType, int steps, int animationLength)
 {
-  if (gateType == 5)
+  if (gateType == 8)
   {
     state.collapse();
     return;
@@ -27,15 +27,24 @@ void animationGate(int gateType, int steps, int animationLength)
     switch (gateType)
     {
       case 1:
-        state.gateX(stepLength);
+        state.gateX(-stepLength);
         break;
       case 2:
-        state.gateY(stepLength);
+        state.gateY(-stepLength);
         break;
       case 3:
-        state.gateZ(stepLength);
+        state.gateZ(-stepLength);
         break;
       case 4:
+        state.gateX(stepLength);
+        break;
+      case 5:
+        state.gateY(stepLength);
+        break;
+      case 6:
+        state.gateZ(stepLength);
+        break;
+      case 7:
         state.gateH(stepLength);
     }
     bead.setLed(state.getCoordinates(), stateColor);
