@@ -620,9 +620,18 @@ public:
 
   void animateTo(uint8_t gate, uint16_t animationLength = 2000)
   {
-    if (!frozen || gate == 0)
+    if (frozen)
+    {
+      prevInterruptCount = interruptCount;
+    }
+    else if (gate == 0)
     {
       return;
+    }
+    if (gate == 8)
+    {
+      state.collapse();
+      visualState.set(state.getCoordinates().v);
     }
     float T_new = millis();
     float delta = T_new - T_freeze;

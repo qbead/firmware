@@ -32,7 +32,11 @@ void loop() {
   stateColor = color(255, 255, 255);
   Serial.print("rotationState: ");
   Serial.println(rotationState);
-  if (!bead.frozen)
+  if (bead.frozen)
+  {
+    stateColor = color(122, 122, 0);
+  }
+  else
   {
     rotationState = bead.checkMotion();
     if (rotationState != 0)
@@ -40,10 +44,6 @@ void loop() {
       bead.frozen = true;
       bead.T_freeze = millis();
     }
-  }
-  else
-  {
-    stateColor = color(122, 122, 0);
   }
   bead.animateTo(rotationState, 2000);
   bead.setLed(bead.visualState, stateColor);
