@@ -455,7 +455,11 @@ public:
   void begin() {
     singletoninstance = this;
     Serial.begin(9600);
-    while (!Serial); // TODO some form of warning or a way to give up if Serial never becomes available
+    for (int waitCount = 0; waitCount < 50; waitCount++)
+    {
+      if (Serial) {break;}
+      delay(100);
+    }
 
     pixels.begin();
     clear();
