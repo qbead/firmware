@@ -4,6 +4,7 @@ Qbead::Qbead bead;
 
 void setup() {
   bead.begin();
+  bead.startAccelerometer();
   bead.setBrightness(25); // way too bright
   Serial.println("testing all pixels discretely");
   for (int i = 0; i < bead.pixels.numPixels(); i++) {
@@ -25,6 +26,6 @@ void setup() {
 void loop() {
   bead.readIMU();
   bead.clear();
-  bead.setBloch_deg_smooth(bead.t_acc, bead.p_acc, color(255, 0, 255));
+  bead.setLed(Qbead::Coordinates(bead.gravityVector), color(255, 0, 255), true);
   bead.show();
 }
