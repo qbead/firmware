@@ -9,7 +9,7 @@ const bool toggleAnimationOn = 1;
 
 void animationGate(int gateType, int steps, int animationLength)
 {
-  if (gateType == 5)
+  if (gateType == 8)
   {
     state.collapse();
     return;
@@ -27,18 +27,36 @@ void animationGate(int gateType, int steps, int animationLength)
     switch (gateType)
     {
       case 1:
-        Serial.println("Executing X gate");
-        state.gateX(stepLength);
+        Serial.print("Executing X gate, progress: ");
+        Serial.println(i/(float)steps);
+        state.gateX(-stepLength);
         break;
       case 2:
-        Serial.println("Executing Y gate");
+        Serial.print("Executing Y gate, progress: ");
+        Serial.println(i/(float)steps);
+        state.gateY(-stepLength);
+        break;
+      case 6:
+        Serial.print("Executing Z gate, progress: ");
+        Serial.println(i/(float)steps);
+        state.gateZ(-stepLength);
+        break;
+      case 4:
+        Serial.print("Executing X gate, progress: ");
+        Serial.println(i/(float)steps);
+        state.gateX(stepLength);
+        break;
+      case 5:
+        Serial.print("Executing Y gate, progress: ");
+        Serial.println(i/(float)steps);
         state.gateY(stepLength);
         break;
       case 3:
-        Serial.println("Executing Z gate");
+        Serial.print("Executing Z gate, progress: ");
+        Serial.println(i/(float)steps);
         state.gateZ(stepLength);
         break;
-      case 4:
+      case 7:
         state.gateH(stepLength);
     }
     bead.setLed(state.getCoordinates(), stateColor);

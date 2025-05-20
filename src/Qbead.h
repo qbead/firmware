@@ -592,27 +592,34 @@ public:
       if (tapStatus & 0x01)
       {
         Serial.println("Collapsing");
-        return 5;
+        return 8;
       }
       else
       {
         Serial.println("Executing H gate");
-        return 4;
+        return 7;
       }
     }
     // Handle shaking
     for (int i = 0; i < 3; i++)
     {
-      if (abs(gyroVector[i]) > GYRO_GATE_THRESHOLD)
+      if (gyroVector[i] > GYRO_GATE_THRESHOLD)
       {
-        return i + 1; // 1 = x, 2 = y, 3 = z
+        return i + 1; // 1 = -x, 2 = -y, 3 = z
+      }
+    }
+    for (int i = 0; i < 3; i++)
+    {
+      if (gyroVector[i] < - GYRO_GATE_THRESHOLD)
+      {
+        return i + 4; // 4 = x, 5 = y, 6 = -z
       }
     }
     return 0;
   }
 
   void writeToBLE(BLECharacteristic& destination, Vector3d vector) {
-    float buffer[3] = {vector(0), vector(1), vector(2)};
+    float buffer[3] = {(float)vector(0), (float)vector(1), (float)vector(2)};
     destination.write(buffer, 3 * sizeof(float));
     for (uint16_t conn_hdl = 0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
     {
