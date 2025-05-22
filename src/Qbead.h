@@ -601,14 +601,12 @@ public:
         }
       }
     }
-    float min_dist = dist[0];
     for (int i = 0; i < leds; i++) {
       if (index[i] != -1) {
         uint8_t r = redch(c);
         uint8_t g = greench(c);
         uint8_t b = bluech(c);
-        float p = dist[i] / min_dist;
-        float p2 = p * p;
+        float p2 =  pow(200, -dist[i]);
         pixels.setPixelColor(index[i], color(p2 * r, p2 * g, p2 * b));
       }
     }
