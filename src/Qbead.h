@@ -1,28 +1,32 @@
 #ifndef QBEAD_H
 #define QBEAD_H
 
-
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
 #include <math.h>
-
+#include <ArduinoEigen.h>
 #include <bluefruit.h>
 
+using namespace Eigen;
+
 // default configs
-#define QB_LEDPIN 0
+#define QB_LEDPIN 10
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
-#define QB_NSECTIONS 6
-#define QB_NLEGS 12
 #define QB_IMU_ADDR 0x6A
-#define QB_IX 0
-#define QB_IY 2
-#define QB_IZ 1
+#define QB_IX 1
+#define QB_IY 0
+#define QB_IZ 2
 #define QB_SX 0
 #define QB_SY 0
 #define QB_SZ 1
-
+#define GYRO_MEASUREMENT_THRESHOLD 0.0001
+#define GYRO_GATE_THRESHOLD 7
+#define SHAKING_THRESHOLD 0.09
+#define QB_PIXEL_COUNT 62
 #define QB_MAX_PRPH_CONNECTION 2
+#define T_ACC 100000
+#define T_GYRO 10000
 
 const uint8_t QB_UUID_SERVICE[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
@@ -32,12 +36,16 @@ const uint8_t QB_UUID_SPH_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
 const uint8_t QB_UUID_ACC_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_GYR_CHAR[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
 
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+const std::complex<float>i(0, 1);
 
 // TODO manage namespaces better
+// The setPixelColor switches blue and green
 static uint32_t color(uint8_t r, uint8_t g, uint8_t b) {
-  return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+  return ((uint32_t)r << 16) | ((uint16_t)b << 8) | g;
 }
 
 static uint8_t redch(uint32_t rgb) {
@@ -109,34 +117,255 @@ void connect_callback(uint16_t conn_handle)
   Serial.println(central_name);
 }
 
+// In rads
+void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
+{
+  // Normalize yaw to be between 0 and 2*PI
+  phi = fmod(phi, 2 * PI);
+  if (phi < 0)
+  {
+    phi += 2 * PI;
+  }
+  if (!checkThetaAndPhi(theta * 180 / PI, phi * 180 / PI))
+  {
+    Serial.print("Theta or Phi out of range when creating coordinates class, initializing as 1");
+    Serial.print("Theta: ");
+    Serial.print(theta);
+    Serial.print("Phi: ");
+    Serial.println(phi);
+    x = 0;
+    y = 0;
+    z = 1;
+    return;
+  }
+
+  x = sin(theta) * cos(phi);
+  y = sin(theta) * sin(phi);
+  z = cos(theta);
+}
+
+// Tap detection
+LSM6DS3 myIMU(I2C_MODE, 0x6A);
+uint8_t interruptCount = 0; // Amount of received interrupts
+uint8_t prevInterruptCount = 0; // Interrupt Counter from last loop
+
+void setupTapInterrupt() {
+  uint8_t error = 0;
+  uint8_t dataToWrite = 0;
+
+  // Double Tap Config
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x8E);// INTERRUPTS_ENABLE, SLOPE_FDS
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x6C);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x80);
+  myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x08);
+}
+
+void int1ISR()
+{
+  interruptCount++;
+}
+
 namespace Qbead {
+
+class Coordinates
+{
+public:
+  Vector3d v;
+
+  Coordinates(float argx, float argy, float argz)
+  {
+    v = Vector3d(argx, argy, argz);
+    v.normalize();
+  }
+
+  // In rads
+  Coordinates(float theta, float phi)
+  {
+    float x, y, z = 0;
+    sphericalToCartesian(theta, phi, x, y, z);
+    v = Vector3d(x, y, z);
+  }
+
+  Coordinates(Vector3d vector)
+  {
+    v = vector;
+    v.normalize();
+  }
+
+  // In rads
+  float theta()
+  {
+    return acos(v(2));
+  }
+
+  // In rads
+  float phi()
+  {
+    return atan2(v(1), v(0));
+  }
+
+  Vector2cf stateVector2D()
+  {
+    std::complex<float> alpha = cos(theta()/2);
+    std::complex<float> beta = exp(i*phi()) * sin(theta()/2);
+    return {alpha, beta};
+  }
+
+  float dist(Vector3d other) const
+  {
+    Vector3d diff = v - other;
+    return diff.norm();
+  }
+
+  void set(float argx, float argy, float argz)
+  {
+    v = Vector3d(argx, argy, argz);
+    v.normalize();
+  }
+
+  // in rads
+  void set(float theta, float phi)
+  {
+    float x, y, z = 0;
+    sphericalToCartesian(theta, phi, x, y, z);
+    v = Vector3d(x, y, z);
+  }
+
+  void set(Vector3d vector) {
+    v = vector;
+    v.normalize();
+  }
+
+  // in rads
+  void setTheta(float theta)
+  {
+    set(theta, phi());
+  }
+
+  // in rads
+  void setPhi(float phi)
+  {
+    set(theta(), phi);
+  }
+};
+
+class QuantumState
+{
+private:
+  Coordinates stateCoordinates;
+
+public:
+  QuantumState(Coordinates argStateCoordinates) : stateCoordinates(argStateCoordinates) {}
+  QuantumState() : stateCoordinates(0, 0, 1) {}
+
+  void setCoordinates(Coordinates argStateCoordinates)
+  {
+    stateCoordinates.set(argStateCoordinates.v);
+  }
+
+  Coordinates getCoordinates()
+  {
+    return stateCoordinates;
+  }
+
+  void collapse()
+  {
+    const float theta = stateCoordinates.theta();
+    const float a = cos(theta / 2);
+    const bool is1 = random(0, 100) < a * a * 100;
+    this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
+  }
+
+  void applyGate(Matrix2cf gate)
+  {
+    Vector2cf stateVector = stateCoordinates.stateVector2D();
+    stateVector = gate * stateVector;
+    stateVector.normalize();
+    stateCoordinates.set(2*acos(abs(stateVector.x())), arg(stateVector.y()) - arg(stateVector.x()));
+  }
+
+  void applyGateType(uint16_t gateType, float rotationDegree = PI)
+  {
+    switch (gateType)
+    {
+    case 1:
+      gateX(-rotationDegree);
+      break;
+    case 2:
+      gateY(-rotationDegree);
+      break;
+    case 3:
+      gateZ(rotationDegree);
+      break;
+    case 4:
+      gateX(rotationDegree);
+      break;
+    case 5:
+      gateY(rotationDegree);
+      break;
+    case 6:
+      gateZ(-rotationDegree);
+      break;
+    case 7:
+      gateH(rotationDegree);
+      break;
+    default:
+      break;
+    }
+  }
+
+  // Rotate PI around the x axis
+  void gateX(float rotationDegree = PI)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << cos(rotationDegree / 2.0f), -sin(rotationDegree / 2.0f) * i,
+        -sin(rotationDegree / 2.0f) * i, cos(rotationDegree / 2.0f); // global phase differs from pauli gates but this doesn't matter for bloch sphere
+    applyGate(gateMatrix);
+  }
+
+  // Rotate PI around the y axis
+  void gateZ(float rotationDegree = PI)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << exp(-i * rotationDegree / 2.0f), 0,
+        0, exp(i * rotationDegree / 2.0f);
+    applyGate(gateMatrix);
+  }
+
+  // Rotate PI around the z axis
+  void gateY(float rotationDegree = PI)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << cos(rotationDegree / 2.0f), -sin(rotationDegree / 2.0f),
+        sin(rotationDegree / 2.0f), cos(rotationDegree / 2.0f);
+    applyGate(gateMatrix);
+  }
+
+  // Rotate PI around the xz axis
+  void gateH(float rotationDegree = PI)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << (cos(rotationDegree / 2.0f) - i * sin(rotationDegree / 2.0f) / sqrt(2.0f)), -i * sin(rotationDegree / 2.0f) / sqrt(2.0f),
+        -i * sin(rotationDegree / 2.0f) / sqrt(2.0f), (cos(rotationDegree / 2.0f) + i * sin(rotationDegree / 2.0f) / sqrt(2.0f));
+    applyGate(gateMatrix);
+  }
+};
 
 class Qbead {
 public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
         const uint16_t pixelconfig = QB_PIXELCONFIG,
-        const uint16_t nsections = QB_NSECTIONS,
-        const uint16_t nlegs = QB_NLEGS,
-        const uint8_t imu_addr = QB_IMU_ADDR,
-        const uint8_t ix = QB_IX,
-        const uint8_t iy = QB_IY,
-        const uint8_t iz = QB_IZ,
-        const bool sx = QB_SX,
-        const bool sy = QB_SY,
-        const bool sz = QB_SZ)
+        const uint8_t imu_addr = QB_IMU_ADDR)
       : imu(LSM6DS3(I2C_MODE, imu_addr)),
-        pixels(Adafruit_NeoPixel(nlegs * (nsections - 1) + 2, pin00, pixelconfig)),
-        nsections(nsections),
-        nlegs(nlegs),
-        theta_quant(180 / nsections),
-        phi_quant(360 / nlegs),
-        ix(ix), iy(iy), iz(iz),
-        sx(sx), sy(sy), sz(sz),
+        pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig)),
         bleservice(QB_UUID_SERVICE),
         blecharcol(QB_UUID_COL_CHAR),
         blecharsph(QB_UUID_SPH_CHAR),
-        blecharacc(QB_UUID_ACC_CHAR)
-        {}
+        blecharacc(QB_UUID_ACC_CHAR),
+        blechargyr(QB_UUID_GYR_CHAR)
+  {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
@@ -147,21 +376,91 @@ public:
   BLECharacteristic blecharcol;
   BLECharacteristic blecharsph;
   BLECharacteristic blecharacc;
+  BLECharacteristic blechargyr;
   uint8_t connection_count = 0;
 
-  const uint8_t nsections;
-  const uint8_t nlegs;
-  const uint8_t theta_quant;
-  const uint8_t phi_quant;
-  const uint8_t ix, iy, iz;
-  const bool sx, sy, sz;
-  float rbuffer[3];
-  float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
-  float t_acc, p_acc;        // theta and phi according to gravity
+  float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
+  float T_freeze = 0;
+  float T_shaking = 0;
+  float shakingCounter = 0;
+  bool frozen = false; // frozen means that there is an animation in progress
+  bool shakingState = false; // if ShakingState is 1 detected shaking and if shaking keeps happening randomising state
+  QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
+  Coordinates visualState = Coordinates(-0.866, 0.25, -0.433);
+  Vector3d gravityVector = Vector3d(0, 0, 1);
+  Vector3d gyroVector = Vector3d(0, 0, 1);
+  float yaw = 0;
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
+
+  // led map index to Coordinates
+  // This map is for the first version of the pcb
+  Coordinates led_map_v1[62] = {
+    Coordinates(-1, -0, -0),
+    Coordinates(-0.866, 0, -0.5),
+    Coordinates(-0.5, 0, -0.866),
+    Coordinates(-0, 0, -1),
+    Coordinates(0.5, 0, -0.866),
+    Coordinates(0.866, 0, -0.5),
+    Coordinates(1, 0, 0),
+    Coordinates(-0.866, 0.25, -0.433),
+    Coordinates(-0.5, 0.433, -0.75),
+    Coordinates(-0, 0.5, -0.866),
+    Coordinates(0.5, 0.433, -0.75),
+    Coordinates(0.866, 0.25, -0.433),
+    Coordinates(-0.866, 0.433, -0.25),
+    Coordinates(-0.5, 0.75, -0.433),
+    Coordinates(-0, 0.866, -0.5),
+    Coordinates(0.5, 0.75, -0.433),
+    Coordinates(0.866, 0.433, -0.25),
+    Coordinates(-0.866, 0.5, 0),
+    Coordinates(-0.5, 0.866, 0),
+    Coordinates(-0, 1, 0),
+    Coordinates(0.5, 0.866, 0),
+    Coordinates(0.866, 0.5, 0),
+    Coordinates(-0.866, 0.433, 0.25),
+    Coordinates(-0.5, 0.75, 0.433),
+    Coordinates(-0, 0.866, 0.5),
+    Coordinates(0.5, 0.75, 0.433),
+    Coordinates(0.866, 0.433, 0.25),
+    Coordinates(-0.866, 0.25, 0.433),
+    Coordinates(-0.5, 0.433, 0.75),
+    Coordinates(-0, 0.5, 0.866),
+    Coordinates(0.5, 0.433, 0.75),
+    Coordinates(0.866, 0.25, 0.433),
+    Coordinates(-0.866, -0, 0.5),
+    Coordinates(-0.5, -0, 0.866),
+    Coordinates(-0, -0, 1),
+    Coordinates(0.5, -0, 0.866),
+    Coordinates(0.866, -0, 0.5),
+    Coordinates(-0.866, -0.25, 0.433),
+    Coordinates(-0.5, -0.433, 0.75),
+    Coordinates(-0, -0.5, 0.866),
+    Coordinates(0.5, -0.433, 0.75),
+    Coordinates(0.866, -0.25, 0.433),
+    Coordinates(-0.866, -0.433, 0.25),
+    Coordinates(-0.5, -0.75, 0.433),
+    Coordinates(-0, -0.866, 0.5),
+    Coordinates(0.5, -0.75, 0.433),
+    Coordinates(0.866, -0.433, 0.25),
+    Coordinates(-0.866, -0.5, -0),
+    Coordinates(-0.5, -0.866, -0),
+    Coordinates(-0, -1, -0),
+    Coordinates(0.5, -0.866, -0),
+    Coordinates(0.866, -0.5, -0),
+    Coordinates(-0.866, -0.433, -0.25),
+    Coordinates(-0.5, -0.75, -0.433),
+    Coordinates(-0, -0.866, -0.5),
+    Coordinates(0.5, -0.75, -0.433),
+    Coordinates(0.866, -0.433, -0.25),
+    Coordinates(-0.866, -0.25, -0.433),
+    Coordinates(-0.5, -0.433, -0.75),
+    Coordinates(-0, -0.5, -0.866),
+    Coordinates(0.5, -0.433, -0.75),
+    Coordinates(0.866, -0.25, -0.433),
+  };
 
   static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
     Serial.println("[INFO]{BLE} Received a write on the color characteristic");
@@ -180,10 +479,24 @@ public:
     Serial.println(singletoninstance->p_ble);
   }
 
+  void startAccelerometer() {
+    // BLE Characteristic IMU xyz accelerometer readout
+    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharacc.setUserDescriptor("xyz acceleration");
+    blecharacc.setFixedLen(3*sizeof(float));
+    blecharacc.begin();
+    blecharacc.write(zerobuffer20, 3*sizeof(float));    
+  }
+
   void begin() {
     singletoninstance = this;
     Serial.begin(9600);
-    while (!Serial); // TODO some form of warning or a way to give up if Serial never becomes available
+    for (int waitCount = 0; waitCount < 50; waitCount++)
+    {
+      if (Serial) {break;}
+      delay(100);
+    }
 
     pixels.begin();
     clear();
@@ -217,14 +530,19 @@ public:
     blecharsph.setWriteCallback(ble_callback_theta_phi);
     blecharsph.begin();
     blecharsph.write(zerobuffer20, 2);
-    // BLE Characteristic IMU xyz readout
-    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharacc.setUserDescriptor("xyz acceleration");
-    blecharacc.setFixedLen(3*sizeof(float));
-    blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3*sizeof(float));
+    // BLE Characteristic IMU xyz gyroscope readout
+    blechargyr.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blechargyr.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blechargyr.setUserDescriptor("xyz gyroscope");
+    blechargyr.setFixedLen(3*sizeof(float));
+    blechargyr.begin();
+    blechargyr.write(zerobuffer20, 3*sizeof(float));
     startBLEadv();
+
+    // Tap detection
+    setupTapInterrupt();
+    pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
+    attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
   }
 
   void clear() {
@@ -235,113 +553,262 @@ public:
     pixels.show();
   }
 
-  void setLegPixelColor(int leg, int pixel, uint32_t color) {
-    leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
-    leg = leg % nlegs;
-    if (leg == 0) {
-      pixels.setPixelColor(pixel, color);
-    } else if (pixel == 0) {
-      pixels.setPixelColor(0, color);
-    } else if (pixel == 6) {
-      pixels.setPixelColor(6, color);
-    } else {
-      pixels.setPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1, color);
-    }
-  }
-
   void setBrightness(uint8_t b) {
     pixels.setBrightness(b);
   }
 
-  void setBloch_deg(float theta, float phi, uint32_t color) {
-    if (!checkThetaAndPhi(theta, phi)) return;
-    float theta_section = theta / theta_quant;
-    if (theta_section < 0.5) {
-      setLegPixelColor(0, 0, color);
-    } else if (theta_section > nsections - 0.5) {
-      setLegPixelColor(0, nsections, color);
+  void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
+    float theta = coordinates.theta() * 180 / PI;
+    float phi = coordinates.phi() * 180 / PI;
+    if (phi < 0) {
+      phi += 360;
+    }
+    setBloch_deg(theta, phi, color, smooth);
+  }
+
+  void showAxis() {
+    setLed(Coordinates(1, 0, 0), color(0, 0, 122));
+    setLed(Coordinates(-1, 0, 0), color(0, 0, 122));
+    setLed(Coordinates(0, 1, 0), color(0, 0, 122));
+    setLed(Coordinates(0, -1, 0), color(0, 0, 122));
+    setLed(Coordinates(0, 0, 1), color(0, 255, 0));
+    setLed(Coordinates(0, 0, -1), color(255, 0, 0));
+  }
+
+  // in rads
+  float getDistToLed(float theta, float phi, int index) {
+    const Coordinates led = led_map_v1[index];
+    const Coordinates reference(theta, phi);
+    return led.dist(reference.v);
+  }
+
+  // Single bit is lit up on the Bloch sphere  
+  void setBloch_deg(float theta, float phi, uint32_t c, bool smooth = false) {
+    int closest_index = -1;
+    float closest_dist = 1000;
+    int second_closest_index = -1;
+    float second_closest_dist = 1000;
+    for (int i = 0; i < 62; i++) {
+      float dist = getDistToLed(theta * PI / 180, phi * PI / 180, i);
+      if (dist < closest_dist) {
+        second_closest_index = closest_index;
+        second_closest_dist = closest_dist;
+        closest_index = i;
+        closest_dist = dist;
+      } else if (dist < second_closest_dist) {
+        second_closest_index = i;
+        second_closest_dist = dist;
+      }
+    }
+    if (smooth) {
+      float dist1 = getDistToLed(theta * PI / 180, phi * PI / 180, closest_index);
+      float dist2 = getDistToLed(theta * PI / 180, phi * PI / 180, second_closest_index);
+      float ratio1 = dist1 / (dist1 + dist2);
+      float ratio2 = dist2 / (dist1 + dist2);
+      uint8_t r = redch(c);
+      uint8_t g = greench(c);
+      uint8_t b = bluech(c);
+      float p1 = ratio1 * ratio1;
+      float p2 = ratio2 * ratio2;
+      pixels.setPixelColor(closest_index, color(p2 * r, p2 * g, p2 * b));
+      pixels.setPixelColor(second_closest_index, color(p1 * r, p1 * g, p1 * b));
     } else {
-      int theta_int = min(nsections - 1, round(theta_section)); // to avoid precision issues near the end of the range
-      int phi_int = round(phi / phi_quant);
-      phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
-      setLegPixelColor(phi_int, theta_int, color);
+      pixels.setPixelColor(closest_index, c);
     }
   }
 
   void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
-    if (!checkThetaAndPhi(theta, phi)) return;
-    float theta_section = theta / theta_quant;
-    int theta_int = min(nsections - 1, round(theta_section)); // to avoid precision issues near the end of the range
-    int phi_int = round(phi / phi_quant);
-    phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+    setBloch_deg(theta, phi, c, true);
+  }
 
-    float p = (theta_section - theta_int);
-    int theta_direction = sign(p);
-    p = abs(p);
-    float q = 1 - p;
-    p = p * p;
-    q = q * q;
+  void animateTo(uint8_t gate, uint16_t animationLength = 2000)
+  {
+    if (frozen)
+    {
+      prevInterruptCount = interruptCount;
+    }
+    else if (gate == 0)
+    {
+      return;
+    }
+    if (gate == 9)
+    {
+      visualState.set(state.getCoordinates().v);
+    }
+    if (gate == 8)
+    {
+      state.collapse();
+      visualState.set(state.getCoordinates().v);
+    }
+    float T_new = millis();
+    float delta = T_new - T_freeze;
+    if (delta > animationLength)
+    {
+      frozen = false;
+      state.applyGateType(gate);
+      Serial.println("Animation finished");
+      return;
+    }
+    float d = delta * PI / float(animationLength);
+    QuantumState from = state;
+    from.applyGateType(gate, d);
+    visualState.set(from.getCoordinates().v);
+  }
 
-    uint8_t rc = redch(c);
-    uint8_t bc = bluech(c);
-    uint8_t gc = greench(c);
+  bool detectShaking()
+  {
+    float totalAcceleration = gravityVector.norm();
+    if (shakingState)
+    {
+      float newTime = millis();
+      shakingCounter += newTime - T_shaking;
+      T_shaking = newTime;
+      if (shakingCounter < 300)
+      {
+        return false;
+      }
+      if (totalAcceleration > 11)
+      {
+        Serial.println("RANDOMISING");
+        float randomTheta = (random(0, 1000)/1000.0f) * PI;
+        float randomPhi = (random(0, 1000)/500.0f) * PI;
+        state.setCoordinates(Coordinates(randomTheta, randomPhi));
+        setLed(state.getCoordinates(), color(255, 0, 255));
+        show();
+        shakingState = false;
+        prevInterruptCount = interruptCount;
+        return true;
+      }
+      if (shakingCounter > 800)
+      {
+        shakingState = false;
+      }
+      return false;
+    }
+    if (totalAcceleration > 11)
+    {
+      Serial.print("Detected shaking turning on shakingState, acc length: ");
+      Serial.println(totalAcceleration);
+      shakingState = true;
+      T_shaking = millis();
+      shakingCounter = 0;
+    } 
+    return false;
+  }
 
-    setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
-    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
+  int checkMotion()
+  {
+    if (frozen)
+    {
+      return 0;
+    }
+    frozen = true;
+    T_freeze = micros();
+    if (detectShaking())
+    {
+      return 9;
+    }
+    if (shakingState)
+    {
+      frozen = false;
+      return 0;
+    }
+    // Handle tap interrupt
+    if (interruptCount > prevInterruptCount)
+    {
+      uint8_t tapStatus = 0;
+      myIMU.readRegister(&tapStatus, LSM6DS3_ACC_GYRO_TAP_SRC);
+      prevInterruptCount = interruptCount;
+
+      if (tapStatus & 0x01)
+      {
+        Serial.println("Collapsing");
+        return 8;
+      }
+      else
+      {
+        Serial.println("Executing H gate");
+        return 7;
+      }
+    }
+    // Handle shaking
+    for (int i = 0; i < 3; i++)
+    {
+      if (gyroVector[i] > GYRO_GATE_THRESHOLD)
+      {
+        return i + 1; // 1 = -x, 2 = -y, 3 = z
+      }
+    }
+    for (int i = 0; i < 3; i++)
+    {
+      if (gyroVector[i] < - GYRO_GATE_THRESHOLD)
+      {
+        return i + 4; // 4 = x, 5 = y, 6 = -z
+      }
+    }
+    frozen = false;
+    return 0;
+  }
+
+  void writeToBLE(BLECharacteristic& destination, Vector3d vector) {
+    float buffer[3] = {(float)vector(0), (float)vector(1), (float)vector(2)};
+    destination.write(buffer, 3 * sizeof(float));
+    for (uint16_t conn_hdl = 0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    {
+      if (Bluefruit.connected(conn_hdl) && destination.notifyEnabled(conn_hdl))
+      {
+        destination.notify(buffer, 3 * sizeof(float));
+      }
+    }
+  }
+
+  Vector3d getVectorFromBuffer(float *buffer) {
+    // calibration of imu because imu is not aligned with bloch sphere
+    float rx = (1 - 2 * QB_SX) * buffer[QB_IX];
+    float ry = (1 - 2 * QB_SY) * buffer[QB_IY];
+    float rz = (1 - 2 * QB_SZ) * buffer[QB_IZ];
+    return Vector3d(rx, ry, rz);
   }
 
   void readIMU(bool print=true) {
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
-    rbuffer[2] = imu.readFloatAccelZ();
-    rx = (1-2*sx)*rbuffer[ix];
-    ry = (1-2*sy)*rbuffer[iy];
-    rz = (1-2*sz)*rbuffer[iz];
+    rbuffer[2] = imu.readFloatAccelZ();    
+    rgyrobuffer[0] = imu.readFloatGyroX();
+    rgyrobuffer[1] = imu.readFloatGyroY();
+    rgyrobuffer[2] = imu.readFloatGyroZ();
 
     float T_new = micros();
     float delta = T_new - T_imu;
     T_imu = T_new;
-    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
-    if (delta > 100000) {
-      x = rx;
-      y = ry;
-      z = rz;
-    } else {
-      float d = delta/T;
-      x = d*rx+(1-d)*x;
-      y = d*ry+(1-d)*y;
-      z = d*rz+(1-d)*z;
-    }
 
-    t_acc = theta(x, y, z)*180/3.14159;
-    p_acc = phi(x, y)*180/3.14159;
-    if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
+    Vector3d newGyro = getVectorFromBuffer(rgyrobuffer) * PI / 180;
+    float d = min(delta / float(T_GYRO), 1.0f);
+    gyroVector = d * newGyro + (1 - d) * gyroVector; // low pass filter
+
+    Vector3d newGravity = getVectorFromBuffer(rbuffer);
+    d = min(delta / float(T_ACC), 1.0f);
+    gravityVector = d * newGravity + (1 - d) * gravityVector;
+
+    yaw += gravityVector.dot(gyroVector);
+    yaw = fmod(yaw, 2 * PI);
 
     if (print) {
-      Serial.print(x);
+      Serial.print(gravityVector(0));
       Serial.print("\t");
-      Serial.print(y);
+      Serial.print(gravityVector(1));
       Serial.print("\t");
-      Serial.print(z);
+      Serial.print(gravityVector(2));
       Serial.print("\t-1\t1\t");
-      Serial.print(t_acc);
+      Serial.print(gyroVector(0));
       Serial.print("\t");
-      Serial.print(p_acc);
-      Serial.print("\t-360\t360\t");
-      Serial.println();
+      Serial.print(gyroVector(1));
+      Serial.print("\t");
+      Serial.println(gyroVector(2));
     }
 
-    rbuffer[0] = x;
-    rbuffer[1] = y;
-    rbuffer[2] = z;
-    blecharacc.write(rbuffer, 3*sizeof(float));
-    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
-      {
-        blecharacc.notify(rbuffer, 3*sizeof(float));
-      }
-    }
+    writeToBLE(blecharacc, gravityVector);
+    writeToBLE(blechargyr, gyroVector);
   }
 
   void startBLEadv(void)
