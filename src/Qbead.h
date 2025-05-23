@@ -53,11 +53,11 @@ static uint8_t redch(uint32_t rgb) {
 }
 
 static uint8_t greench(uint32_t rgb) {
-  return (0x00ff00 & rgb) >> 8;
+  return 0x0000ff & rgb;
 }
 
 static uint8_t bluech(uint32_t rgb) {
-  return 0x0000ff & rgb;
+  return (0x00ff00 & rgb) >> 8;
 }
 
 uint32_t colorWheel(uint8_t wheelPos) {
@@ -557,13 +557,13 @@ public:
     pixels.setBrightness(b);
   }
 
-  void setLed(Coordinates coordinates, uint32_t color, bool smooth = false) {
+  void setLed(Coordinates coordinates, uint32_t color, int leds = 1) {
     float theta = coordinates.theta() * 180 / PI;
     float phi = coordinates.phi() * 180 / PI;
     if (phi < 0) {
       phi += 360;
     }
-    setBloch_deg(theta, phi, color, smooth);
+    setBloch_deg(theta, phi, color, leds);
   }
 
   void showAxis() {
@@ -583,42 +583,40 @@ public:
   }
 
   // Single bit is lit up on the Bloch sphere  
-  void setBloch_deg(float theta, float phi, uint32_t c, bool smooth = false) {
-    int closest_index = -1;
-    float closest_dist = 1000;
-    int second_closest_index = -1;
-    float second_closest_dist = 1000;
-    for (int i = 0; i < 62; i++) {
-      float dist = getDistToLed(theta * PI / 180, phi * PI / 180, i);
-      if (dist < closest_dist) {
-        second_closest_index = closest_index;
-        second_closest_dist = closest_dist;
-        closest_index = i;
-        closest_dist = dist;
-      } else if (dist < second_closest_dist) {
-        second_closest_index = i;
-        second_closest_dist = dist;
+  void setBloch_deg(float theta, float phi, uint32_t c, int leds = 1) {
+    int index[leds];
+    float dist[leds];
+    for (int i = 0; i < leds; i++) {
+      index[i] = -1;
+      dist[i] = 1000;
+    }
+    for (int i = 0; i < QB_PIXEL_COUNT; i++) {
+      float d = getDistToLed(theta * PI / 180, phi * PI / 180, i);
+      for (int j = 0; j < leds; j++) {
+        if (d < dist[j]) {
+          for (int k = leds - 1; k > j; k--) {
+            index[k] = index[k - 1];
+            dist[k] = dist[k - 1];
+          }
+          index[j] = i;
+          dist[j] = d;
+          break;
+        }
       }
     }
-    if (smooth) {
-      float dist1 = getDistToLed(theta * PI / 180, phi * PI / 180, closest_index);
-      float dist2 = getDistToLed(theta * PI / 180, phi * PI / 180, second_closest_index);
-      float ratio1 = dist1 / (dist1 + dist2);
-      float ratio2 = dist2 / (dist1 + dist2);
-      uint8_t r = redch(c);
-      uint8_t g = greench(c);
-      uint8_t b = bluech(c);
-      float p1 = ratio1 * ratio1;
-      float p2 = ratio2 * ratio2;
-      pixels.setPixelColor(closest_index, color(p2 * r, p2 * g, p2 * b));
-      pixels.setPixelColor(second_closest_index, color(p1 * r, p1 * g, p1 * b));
-    } else {
-      pixels.setPixelColor(closest_index, c);
+    for (int i = 0; i < leds; i++) {
+      if (index[i] != -1) {
+        uint8_t r = redch(c);
+        uint8_t g = greench(c);
+        uint8_t b = bluech(c);
+        float p2 =  pow(200, -dist[i]);
+        pixels.setPixelColor(index[i], color(p2 * r, p2 * g, p2 * b));
+      }
     }
   }
 
   void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
-    setBloch_deg(theta, phi, c, true);
+    setBloch_deg(theta, phi, c, 2);
   }
 
   void animateTo(uint8_t gate, uint16_t animationLength = 2000)
