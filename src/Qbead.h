@@ -658,7 +658,6 @@ public:
   bool detectShaking()
   {
     float totalAcceleration = gravityVector.norm();
-    Serial.println(totalAcceleration);
     if (shakingState)
     {
       float newTime = millis();
@@ -705,7 +704,6 @@ public:
     }
     frozen = true;
     T_freeze = micros();
-    Serial.print(shakingState); 
     if (detectShaking())
     {
       return 9;
