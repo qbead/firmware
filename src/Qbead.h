@@ -382,7 +382,10 @@ public:
   float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
   float T_freeze = 0;
+  float T_shaking = 0;
+  float shakingCounter = 0;
   bool frozen = false; // frozen means that there is an animation in progress
+  bool shakingState = false; // if ShakingState is 1 detected shaking and if shaking keeps happening randomising state
   QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
   Coordinates visualState = Coordinates(-0.866, 0.25, -0.433);
   Vector3d gravityVector = Vector3d(0, 0, 1);
@@ -628,6 +631,10 @@ public:
     {
       return;
     }
+    if (gate == 9)
+    {
+      visualState.set(state.getCoordinates().v);
+    }
     if (gate == 8)
     {
       state.collapse();
@@ -648,6 +655,48 @@ public:
     visualState.set(from.getCoordinates().v);
   }
 
+  bool detectShaking()
+  {
+    float totalAcceleration = gravityVector.norm();
+    Serial.println(totalAcceleration);
+    if (shakingState)
+    {
+      float newTime = millis();
+      shakingCounter += newTime - T_shaking;
+      T_shaking = newTime;
+      if (shakingCounter < 300)
+      {
+        return false;
+      }
+      if (totalAcceleration > 11)
+      {
+        Serial.println("RANDOMISING");
+        float randomTheta = (random(0, 1000)/1000.0f) * PI;
+        float randomPhi = (random(0, 1000)/500.0f) * PI;
+        state.setCoordinates(Coordinates(randomTheta, randomPhi));
+        setLed(state.getCoordinates(), color(255, 0, 255));
+        show();
+        shakingState = false;
+        prevInterruptCount = interruptCount;
+        return true;
+      }
+      if (shakingCounter > 800)
+      {
+        shakingState = false;
+      }
+      return false;
+    }
+    if (totalAcceleration > 11)
+    {
+      Serial.print("Detected shaking turning on shakingState, acc length: ");
+      Serial.println(totalAcceleration);
+      shakingState = true;
+      T_shaking = millis();
+      shakingCounter = 0;
+    } 
+    return false;
+  }
+
   int checkMotion()
   {
     if (frozen)
@@ -656,6 +705,16 @@ public:
     }
     frozen = true;
     T_freeze = micros();
+    Serial.print(shakingState); 
+    if (detectShaking())
+    {
+      return 9;
+    }
+    if (shakingState)
+    {
+      frozen = false;
+      return 0;
+    }
     // Handle tap interrupt
     if (interruptCount > prevInterruptCount)
     {
