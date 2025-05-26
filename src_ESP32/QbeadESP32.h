@@ -19,9 +19,7 @@ using namespace Eigen;
 #define QB_SX 0
 #define QB_SY 0
 #define QB_SZ 1
-#define GYRO_MEASUREMENT_THRESHOLD 0.0001
-#define GYRO_GATE_THRESHOLD 7
-#define SHAKING_THRESHOLD 0.09
+#define GYRO_GATE_THRESHOLD 8
 #define QB_PIXEL_COUNT 62
 #define QB_MAX_PRPH_CONNECTION 2
 #define T_ACC 100000
@@ -144,7 +142,7 @@ void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
 }
 
 // Tap detection
-LSM6DS3 myIMU(I2C_MODE, 0x6A);
+LSM6DS3 myIMU(I2C_MODE, QB_IMU_ADDR); // Create an instance of the IMU
 uint8_t interruptCount = 0; // Amount of received interrupts
 uint8_t prevInterruptCount = 0; // Interrupt Counter from last loop
 
@@ -383,7 +381,6 @@ public:
   BLECharacteristic blecharsph;
   BLECharacteristic blecharacc;
   BLECharacteristic blechargyr;
-  uint8_t connection_count = 0;
 
   float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
@@ -402,7 +399,7 @@ public:
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
 
   // led map index to Coordinates
-  // This map is for the first version of the pcb
+  // This map is for the first version of the flex-pcb
   Coordinates led_map_v1[62] = {
     Coordinates(-1, -0, -0),
     Coordinates(-0.866, 0, -0.5),
