@@ -102,18 +102,6 @@ bool checkThetaAndPhi(float theta, float phi) {
   return theta >= 0 && theta <= 180 && phi >= 0 && phi <= 360;
 }
 
-void connect_callback(uint16_t conn_handle)
-{
-  // Get the reference to current connection
-  BLEConnection* connection = Bluefruit.Connection(conn_handle);
-
-  char central_name[32] = { 0 };
-  connection->getPeerName(central_name, sizeof(central_name));
-
-  Serial.print("[INFO]{BLE} Connected to "); // TODO take care of cases where Serial is not available
-  Serial.println(central_name);
-}
-
 // In rads
 void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
 {
@@ -363,24 +351,11 @@ public:
         const uint16_t pixelconfig = QB_PIXELCONFIG,
         const uint8_t imu_addr = QB_IMU_ADDR)
       : imu(LSM6DS3(I2C_MODE, imu_addr)),
-        pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig)),
-        bleservice(QB_UUID_SERVICE),
-        blecharcol(QB_UUID_COL_CHAR),
-        blecharsph(QB_UUID_SPH_CHAR),
-        blecharacc(QB_UUID_ACC_CHAR),
-        blechargyr(QB_UUID_GYR_CHAR)
+        pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig))
   {}
-
-  static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
-
-  BLEService bleservice;
-  BLECharacteristic blecharcol;
-  BLECharacteristic blecharsph;
-  BLECharacteristic blecharacc;
-  BLECharacteristic blechargyr;
 
   float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
@@ -394,9 +369,6 @@ public:
   Vector3d gravityVector = Vector3d(0, 0, 1);
   Vector3d gyroVector = Vector3d(0, 0, 1);
   float yaw = 0;
-
-  float t_ble, p_ble; // theta and phi as sent over BLE connection
-  uint32_t c_ble = 0xffffff; // color as sent over BLE connection
 
   // led map index to Coordinates
   // This map is for the first version of the flex-pcb
@@ -465,35 +437,7 @@ public:
     Coordinates(0.866, -0.25, -0.433),
   };
 
-  static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-    Serial.println("[INFO]{BLE} Received a write on the color characteristic");
-    singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
-    Serial.print("[DEBUG]{BLE} Received");
-    Serial.println(singletoninstance->c_ble, HEX);
-  }
-
-  static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
-    Serial.println("[INFO]{BLE} Received a write on the spherical coordinates characteristic");
-    singletoninstance->t_ble = ((uint32_t)data[0])*180/255;
-    singletoninstance->p_ble = ((uint32_t)data[1])*360/255;
-    Serial.print("[DEBUG]{BLE} Received t=");
-    Serial.print(singletoninstance->t_ble);
-    Serial.print(" p=");
-    Serial.println(singletoninstance->p_ble);
-  }
-
-  void startAccelerometer() {
-    // BLE Characteristic IMU xyz accelerometer readout
-    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharacc.setUserDescriptor("xyz acceleration");
-    blecharacc.setFixedLen(3*sizeof(float));
-    blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3*sizeof(float));    
-  }
-
   void begin() {
-    singletoninstance = this;
     Serial.begin(9600);
     for (int waitCount = 0; waitCount < 50; waitCount++)
     {
@@ -505,42 +449,12 @@ public:
     clear();
     setBrightness(10);
 
-    Serial.println("[INFO] Booting... Qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
+    Serial.println("[INFO] Booting... Qbead on XIAO ESP32 compiled on " __DATE__ " at " __TIME__);
     if (!imu.begin()) {
       Serial.println("[DEBUG]{IMU} IMU initialized correctly");
     } else {
       Serial.println("[ERROR]{IMU} IMU failed to initialize");
     }
-
-    // BLE Peripheral service setup
-    Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
-    Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
-    Bluefruit.Periph.setConnectCallback(connect_callback);
-    bleservice.begin();
-    // BLE Characteristic Bloch Sphere Visualizer color setup
-    blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharcol.setUserDescriptor("BSV rgb color");
-    blecharcol.setFixedLen(3);
-    blecharcol.setWriteCallback(ble_callback_color);
-    blecharcol.begin();
-    blecharcol.write(zerobuffer20, 3);
-    // BLE Characteristic Bloch Sphere Visualizer spherical coordinate setup
-    blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharsph.setUserDescriptor("BSV spherical coordinates");
-    blecharsph.setFixedLen(2);
-    blecharsph.setWriteCallback(ble_callback_theta_phi);
-    blecharsph.begin();
-    blecharsph.write(zerobuffer20, 2);
-    // BLE Characteristic IMU xyz gyroscope readout
-    blechargyr.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    blechargyr.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blechargyr.setUserDescriptor("xyz gyroscope");
-    blechargyr.setFixedLen(3*sizeof(float));
-    blechargyr.begin();
-    blechargyr.write(zerobuffer20, 3*sizeof(float));
-    startBLEadv();
 
     // Tap detection
     setupTapInterrupt();
@@ -751,18 +665,6 @@ public:
     return 0;
   }
 
-  void writeToBLE(BLECharacteristic& destination, Vector3d vector) {
-    float buffer[3] = {(float)vector(0), (float)vector(1), (float)vector(2)};
-    destination.write(buffer, 3 * sizeof(float));
-    for (uint16_t conn_hdl = 0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if (Bluefruit.connected(conn_hdl) && destination.notifyEnabled(conn_hdl))
-      {
-        destination.notify(buffer, 3 * sizeof(float));
-      }
-    }
-  }
-
   Vector3d getVectorFromBuffer(float *buffer) {
     // calibration of imu because imu is not aligned with bloch sphere
     float rx = (1 - 2 * QB_SX) * buffer[QB_IX];
@@ -807,44 +709,8 @@ public:
       Serial.print("\t");
       Serial.println(gyroVector(2));
     }
-
-    writeToBLE(blecharacc, gravityVector);
-    writeToBLE(blechargyr, gyroVector);
   }
-
-  void startBLEadv(void)
-  {
-    Serial.println("[INFO]{BLE} Start advertising...");
-    // Advertising packet
-    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-    Bluefruit.Advertising.addTxPower();
-
-    // Include HRM Service UUID
-    Bluefruit.Advertising.addService(bleservice);
-
-    // Secondary Scan Response packet (optional)
-    // Since there is no room for 'Name' in Advertising packet
-    Bluefruit.ScanResponse.addName();
-
-    /* Start Advertising
-    * - Enable auto advertising if disconnected
-    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
-    * - Timeout for fast mode is 30 seconds
-    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
-    *
-    * For recommended advertising interval
-    * https://developer.apple.com/library/content/qa/qa1931/_index.html
-    */
-    Bluefruit.Advertising.restartOnDisconnect(true);
-    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
-    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
-  }
-
 }; // end class
-
-Qbead *Qbead::singletoninstance = nullptr;
-
 } // end namespace
 
 #endif // QBEAD_H

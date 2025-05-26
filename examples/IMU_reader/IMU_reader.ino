@@ -4,7 +4,6 @@ Qbead::Qbead bead;
 
 void setup() {
   bead.begin();
-  bead.startAccelerometer();
   bead.setBrightness(25); // way too bright
   Serial.println("testing all pixels discretely");
   for (int i = 0; i < bead.pixels.numPixels(); i++) {
