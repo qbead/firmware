@@ -272,8 +272,15 @@ public:
   void collapse()
   {
     const float theta = stateCoordinates.theta();
-    const float a = cos(theta / 2);
-    const bool is1 = random(0, 100) < a * a * 100;
+    const float a = (cos(theta) + 1) / 2; // probability of measuring |0>
+    if (a < 0.0001) {
+      stateCoordinates.set(0, 0, -1);
+      return;
+    } else if (a > 0.9999) {
+      stateCoordinates.set(0, 0, 1);
+      return;
+    }
+    const bool is1 = random(0, 100) <= a * a * 100;
     this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
   }
 
