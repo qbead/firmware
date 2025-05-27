@@ -570,9 +570,9 @@ public:
     }
 
     // Tap detection
-    setupTapInterrupt();
-    pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
-    attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
+    // setupTapInterrupt();
+    // pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
+    // attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
   }
 
   void clear() {
