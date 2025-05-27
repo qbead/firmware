@@ -57,11 +57,10 @@ void loop()
         }
     }
     int currentTime = millis();
-    // Increment the amount of leds based on the time since the last collapse
+    // Increment the amount of decoherence based on the time since the last collapse
     // This is to show decoherence
-    int leds = (currentTime - lastCollapseTime) / 2000;
-    leds = constrain(leds, 1, 15);
+    float decoherence = (currentTime - lastCollapseTime) / 2000;
     bead.animateTo(rotationState, 2000);
-    bead.setLed(bead.visualState, stateColor, leds);
+    bead.setLed(bead.visualState, stateColor, decoherence);
     bead.show();
 }
