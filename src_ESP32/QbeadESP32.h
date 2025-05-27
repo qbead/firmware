@@ -454,12 +454,6 @@ public:
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
   }
 
-  void startAccelerometer() 
-  {
-    blecharacc = bleservice->createCharacteristic(QB_UUID_ACC_CHAR,
-                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  }
-
   // TODO: Check when the new flex-pcb has arrived
   Coordinates led_map_v2[107] = {
     Coordinates(0.0, 0.0),
