@@ -437,6 +437,7 @@ public:
     Coordinates(0.866, -0.25, -0.433),
   };
 
+  // TODO: Check when the new flex-pcb has arrived
   Coordinates led_map_v2[107] = {
     Coordinates(0.0, 0.0),
     Coordinates(0.39, 4.97),
