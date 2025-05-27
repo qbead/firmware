@@ -3,8 +3,11 @@
 Qbead::Qbead bead;
 int rotationState = 0;
 uint32_t stateColor = color(255, 255, 255);
+uint32_t decoherenceColor = color(122, 0, 122);
 const bool toggleAnimationOn = 1;
-int lastCollapseTime = 0;
+Qbead::Coordinates oldCoordinates(0, 0, 1);
+int t = 0;
+bool wasFrozen = false;
 
 void setup()
 {
@@ -28,7 +31,8 @@ void setup()
         }
     }
     Serial.println("starting inertial tracking");
-    lastCollapseTime = millis();
+    oldCoordinates = bead.state.getCoordinates();
+    t = millis();
 }
 
 void loop()
@@ -42,25 +46,36 @@ void loop()
     if (bead.frozen)
     {
         stateColor = color(122, 122, 0);
+        wasFrozen = true;
     }
     else
     {
+        if (wasFrozen)
+        {
+            wasFrozen = false;
+            oldCoordinates = bead.state.getCoordinates();
+        }
         rotationState = bead.checkMotion();
         if (rotationState != 0)
         {
             bead.frozen = true;
             bead.T_freeze = millis();
         }
-        if (rotationState == 8)
+        float phi = bead.state.getCoordinates().phi();
+        int dt = millis() - t;
+        float randInt = random(200, 10000);
+        phi += dt / randInt;
+        if (phi > 2 * PI)
         {
-            lastCollapseTime = millis();
+            phi -= 2 * PI;
         }
+        Qbead::Coordinates newCoordinates(bead.state.getCoordinates().theta(), phi);
+        bead.state.setCoordinates(newCoordinates);
+        bead.visualState = bead.state.getCoordinates();
+        bead.setLed(oldCoordinates, decoherenceColor);
     }
-    int currentTime = millis();
-    // Increment the amount of decoherence based on the time since the last collapse
-    // This is to show decoherence
-    float decoherence = (currentTime - lastCollapseTime) / 2000;
+    t = millis();
     bead.animateTo(rotationState, 2000);
-    bead.setLed(bead.visualState, stateColor, decoherence);
+    bead.setLed(bead.visualState, stateColor, 1);
     bead.show();
 }

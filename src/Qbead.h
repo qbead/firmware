@@ -671,7 +671,7 @@ public:
       }
       if (totalAcceleration > 11)
       {
-        Serial.println("RANDOMISING");
+        Serial.println("Randomizing");
         float randomTheta = (random(0, 1000)/1000.0f) * PI;
         float randomPhi = (random(0, 1000)/500.0f) * PI;
         state.setCoordinates(Coordinates(randomTheta, randomPhi));
