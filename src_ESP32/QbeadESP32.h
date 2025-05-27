@@ -6,6 +6,9 @@
 #include <LSM6DS3.h>
 #include <math.h>
 #include <ArduinoEigen.h>
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
 
 using namespace Eigen;
 
@@ -25,15 +28,15 @@ using namespace Eigen;
 #define T_ACC 100000
 #define T_GYRO 10000
 
-const uint8_t QB_UUID_SERVICE[] =
+const char QB_UUID_SERVICE[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
-const uint8_t QB_UUID_COL_CHAR[] =
+const char QB_UUID_COL_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+1,0x1f,0x0c,0xe3};
-const uint8_t QB_UUID_SPH_CHAR[] =
+const char QB_UUID_SPH_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
-const uint8_t QB_UUID_ACC_CHAR[] =
+const char QB_UUID_ACC_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
-const uint8_t QB_UUID_GYR_CHAR[] =
+const char QB_UUID_GYR_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
 
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
@@ -357,6 +360,14 @@ public:
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
+  BLEServer* bleserver;
+  BLEService* bleservice;
+  BLECharacteristic* blecharcol;
+  BLECharacteristic* blecharsph;
+  BLECharacteristic* blecharacc;
+  BLECharacteristic* blechargyr;
+  BLEAdvertising* bleadvertising;
+
   float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
   float T_freeze = 0;
@@ -437,6 +448,12 @@ public:
     Coordinates(0.866, -0.25, -0.433),
   };
 
+  void startAccelerometer() 
+  {
+    blecharacc = bleservice->createCharacteristic(QB_UUID_ACC_CHAR,
+                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  }
+
   void begin() {
     Serial.begin(9600);
     for (int waitCount = 0; waitCount < 50; waitCount++)
@@ -456,10 +473,67 @@ public:
       Serial.println("[ERROR]{IMU} IMU failed to initialize");
     }
 
+    BLEDevice::init("qbead | " __DATE__ " " __TIME__);
+    // Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
+    // Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
+    // Bluefruit.Periph.setConnectCallback(connect_callback);
+    bleserver = BLEDevice::createServer();
+    bleservice = bleserver->createService(QB_UUID_SERVICE);
+    // BLE Characteristic Bloch Sphere Visualizer color setup
+
+    uint8_t zerobuffer2[] = {0 ,0};
+    float zerobufferfloat[] = {0.0f, 0.0f, 0.0f};
+    blecharcol = bleservice->createCharacteristic(QB_UUID_COL_CHAR,
+                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+    
+    blecharsph = bleservice->createCharacteristic(QB_UUID_SPH_CHAR,
+                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+    
+    
+    blechargyr = bleservice->createCharacteristic(QB_UUID_GYR_CHAR,
+                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+
+    bleservice->start();
+    startBLEadv();
     // Tap detection
-    setupTapInterrupt();
-    pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
-    attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
+    // setupTapInterrupt();
+    // pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
+    // attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
+  }
+
+  void startBLEadv(void)
+  {
+    bleadvertising = bleserver->getAdvertising();
+    bleadvertising->addServiceUUID(QB_UUID_SERVICE);
+    Serial.println("[INFO]{BLE} Start advertising...");
+    // Advertising packet
+    BLEAdvertisementData advertisementData;
+    advertisementData.setFlags(6); // BLE_SIG_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE = 6
+
+    // Bluefruit.Advertising.addTxPower();
+
+    // Secondary Scan Response packet (optional)
+    // Since there is no room for 'Name' in Advertising packet
+    // Bluefruit.ScanResponse.addName();
+
+    /* Start Advertising
+    * - Enable auto advertising if disconnected
+    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+    * - Timeout for fast mode is 30 seconds
+    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+    *
+    * For recommended advertising interval
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html
+    */
+    bleadvertising->setAdvertisementData(advertisementData);
+    // Bluefruit.Advertising.restartOnDisconnect(true);
+    bleadvertising->setMinInterval(32);
+    bleadvertising->setMaxInterval(244);
+  
+    BLEDevice::startAdvertising();
+    // Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+    // Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
+    // Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
   }
 
   void clear() {
@@ -665,6 +739,12 @@ public:
     return 0;
   }
 
+  void writeToBLE(BLECharacteristic* destination, Vector3d vector) {
+    float buffer[] = {(float)vector(0), (float)vector(1), (float)vector(2)};
+    destination->setValue((uint8_t*)buffer, sizeof(buffer));
+    destination->notify();
+  }
+
   Vector3d getVectorFromBuffer(float *buffer) {
     // calibration of imu because imu is not aligned with bloch sphere
     float rx = (1 - 2 * QB_SX) * buffer[QB_IX];
@@ -709,8 +789,11 @@ public:
       Serial.print("\t");
       Serial.println(gyroVector(2));
     }
+    
+    writeToBLE(blecharacc, gravityVector);
+    writeToBLE(blechargyr, gyroVector);
   }
 }; // end class
 } // end namespace
 
-#endif // QBEAD_H
+#endif // QBEAD_H 
