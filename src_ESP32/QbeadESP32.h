@@ -157,6 +157,25 @@ void int1ISR()
 
 namespace Qbead {
 
+class MyServerCallbacks: public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) {
+    Serial.println("BLE: Device connected");
+  }
+  void onDisconnect(BLEServer* pServer) {
+    Serial.println("BLE: Device disconnected");
+  }
+};
+
+class ColorCharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    Serial.println("[INFO]{BLE} Received a write on the color characteristic");
+    uint8_t data[3] = pCharacteristic->getData();
+    Qbead::singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
+    Serial.print("[DEBUG]{BLE} Received");
+    Serial.println(Qbead::singletoninstance->c_ble, HEX);
+  }
+};
+
 class Coordinates
 {
 public:
@@ -356,6 +375,8 @@ public:
       : imu(LSM6DS3(I2C_MODE, imu_addr)),
         pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig))
   {}
+  
+  static Qbead *singletoninstance;
 
   LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
@@ -373,6 +394,7 @@ public:
   float T_freeze = 0;
   float T_shaking = 0;
   float shakingCounter = 0;
+  uint32_t = c_ble;
   bool frozen = false; // frozen means that there is an animation in progress
   bool shakingState = false; // if ShakingState is 1 detected shaking and if shaking keeps happening randomising state
   QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
@@ -568,6 +590,7 @@ public:
   void
   begin()
   {
+    singletoninstance = this;
     Serial.begin(9600);
     for (int waitCount = 0; waitCount < 50; waitCount++)
     {
@@ -591,6 +614,7 @@ public:
     // Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
     // Bluefruit.Periph.setConnectCallback(connect_callback);
     bleserver = BLEDevice::createServer();
+    bleserver->setCallbacks(new MyServerCallbacks());
     bleservice = bleserver->createService(QB_UUID_SERVICE);
     // BLE Characteristic Bloch Sphere Visualizer color setup
 
@@ -598,6 +622,7 @@ public:
     float zerobufferfloat[] = {0.0f, 0.0f, 0.0f};
     blecharcol = bleservice->createCharacteristic(QB_UUID_COL_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+    blecharcol->setCallbacks(new ColorCharCallbacks());
     
     blecharsph = bleservice->createCharacteristic(QB_UUID_SPH_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
@@ -621,6 +646,7 @@ public:
     Serial.println("[INFO]{BLE} Start advertising...");
     // Advertising packet
     BLEAdvertisementData advertisementData;
+    advertisementData.setName("qbead | " __DATE__ " " __TIME__);
     advertisementData.setFlags(6); // BLE_SIG_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE = 6
 
     // Bluefruit.Advertising.addTxPower();
@@ -907,6 +933,9 @@ public:
     writeToBLE(blechargyr, gyroVector);
   }
 }; // end class
+
+Qbead *Qbead::singletoninstance = nullptr;
+
 } // end namespace
 
 #endif // QBEAD_H 
