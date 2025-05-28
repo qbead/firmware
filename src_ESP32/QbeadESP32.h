@@ -133,7 +133,7 @@ void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
 }
 
 // Tap detection
-LSM6DS3 myIMU(I2C_MODE, QB_IMU_ADDR); // Create an instance of the IMU
+// LSM6DS3 myIMU(I2C_MODE, QB_IMU_ADDR); // Create an instance of the IMU
 uint8_t interruptCount = 0; // Amount of received interrupts
 uint8_t prevInterruptCount = 0; // Interrupt Counter from last loop
 
@@ -142,12 +142,12 @@ void setupTapInterrupt() {
   uint8_t dataToWrite = 0;
 
   // Double Tap Config
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x8E);// INTERRUPTS_ENABLE, SLOPE_FDS
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x6C);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x80);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x08);
+  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60);
+  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x8E);// INTERRUPTS_ENABLE, SLOPE_FDS
+  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x6C);
+  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);
+  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x80);
+  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x08);
 }
 
 void int1ISR()
@@ -372,13 +372,13 @@ public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
         const uint16_t pixelconfig = QB_PIXELCONFIG,
         const uint8_t imu_addr = QB_IMU_ADDR)
-      : imu(LSM6DS3(I2C_MODE, imu_addr)),
+      :
         pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig))
   {}
   
   static Qbead *singletoninstance;
 
-  LSM6DS3 imu;
+  // LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
   BLEServer* bleserver;
@@ -603,11 +603,11 @@ public:
     setBrightness(10);
 
     Serial.println("[INFO] Booting... Qbead on XIAO ESP32 compiled on " __DATE__ " at " __TIME__);
-    if (!imu.begin()) {
-      Serial.println("[DEBUG]{IMU} IMU initialized correctly");
-    } else {
-      Serial.println("[ERROR]{IMU} IMU failed to initialize");
-    }
+    // if (!imu.begin()) {
+    //   Serial.println("[DEBUG]{IMU} IMU initialized correctly");
+    // } else {
+    //   Serial.println("[ERROR]{IMU} IMU failed to initialize");
+    // }
 
     BLEDevice::init("qbead | " __DATE__ " " __TIME__);
     // Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
@@ -845,7 +845,7 @@ public:
     if (interruptCount > prevInterruptCount)
     {
       uint8_t tapStatus = 0;
-      myIMU.readRegister(&tapStatus, LSM6DS3_ACC_GYRO_TAP_SRC);
+      // myIMU.readRegister(&tapStatus, LSM6DS3_ACC_GYRO_TAP_SRC);
       prevInterruptCount = interruptCount;
 
       if (tapStatus & 0x01)
@@ -893,12 +893,18 @@ public:
   }
 
   void readIMU(bool print=true) {
-    rbuffer[0] = imu.readFloatAccelX();
-    rbuffer[1] = imu.readFloatAccelY();
-    rbuffer[2] = imu.readFloatAccelZ();    
-    rgyrobuffer[0] = imu.readFloatGyroX();
-    rgyrobuffer[1] = imu.readFloatGyroY();
-    rgyrobuffer[2] = imu.readFloatGyroZ();
+    // rbuffer[0] = imu.readFloatAccelX();
+    // rbuffer[1] = imu.readFloatAccelY();
+    // rbuffer[2] = imu.readFloatAccelZ();    
+    // rgyrobuffer[0] = imu.readFloatGyroX();
+    // rgyrobuffer[1] = imu.readFloatGyroY();
+    // rgyrobuffer[2] = imu.readFloatGyroZ();
+    rbuffer[0] = 0;
+    rbuffer[1] = 0;
+    rbuffer[2] = 1; // gravity vector
+    rgyrobuffer[0] = 0;
+    rgyrobuffer[1] = 0;
+    rgyrobuffer[2] = 0; // gyro vector
 
     float T_new = micros();
     float delta = T_new - T_imu;
