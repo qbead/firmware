@@ -6,11 +6,11 @@
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
 #include <math.h>
-
+#include <ArduinoEigen.h>
 #include <bluefruit.h>
 
 // default configs
-#define QB_LEDPIN 0
+#define QB_LEDPIN 10
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
 #define QB_NSECTIONS 6
 #define QB_NLEGS 12
@@ -32,6 +32,8 @@ const uint8_t QB_UUID_SPH_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
 const uint8_t QB_UUID_ACC_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_GYR_CHAR[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
 
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
@@ -135,7 +137,8 @@ public:
         bleservice(QB_UUID_SERVICE),
         blecharcol(QB_UUID_COL_CHAR),
         blecharsph(QB_UUID_SPH_CHAR),
-        blecharacc(QB_UUID_ACC_CHAR)
+        blecharacc(QB_UUID_ACC_CHAR),
+        blechargyr(QB_UUID_GYR_CHAR)
         {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
@@ -147,6 +150,7 @@ public:
   BLECharacteristic blecharcol;
   BLECharacteristic blecharsph;
   BLECharacteristic blecharacc;
+  BLECharacteristic blechargyr;
   uint8_t connection_count = 0;
 
   const uint8_t nsections;
@@ -155,10 +159,12 @@ public:
   const uint8_t phi_quant;
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
-  float rbuffer[3];
-  float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
+  float rbuffer[3], rgyrobuffer[3];
   float t_acc, p_acc;        // theta and phi according to gravity
-  float T_imu;             // last update from the IMU
+  float T_imu;             // last update from the IMU  
+  Vector3d gravityVector = Vector3d(0, 0, 1);
+  Vector3d gyroVector = Vector3d(0, 0, 1);
+  float yaw = 0;
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
@@ -217,13 +223,20 @@ public:
     blecharsph.setWriteCallback(ble_callback_theta_phi);
     blecharsph.begin();
     blecharsph.write(zerobuffer20, 2);
-    // BLE Characteristic IMU xyz readout
+    // BLE Characteristic IMU xyz accelerometer readout
     blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
     blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     blecharacc.setUserDescriptor("xyz acceleration");
     blecharacc.setFixedLen(3*sizeof(float));
     blecharacc.begin();
     blecharacc.write(zerobuffer20, 3*sizeof(float));
+    // BLE Characteristic IMU xyz gyroscope readout
+    blechargyr.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blechargyr.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blechargyr.setUserDescriptor("xyz gyroscope");
+    blechargyr.setFixedLen(3*sizeof(float));
+    blechargyr.begin();
+    blechargyr.write(zerobuffer20, 3*sizeof(float));
     startBLEadv();
   }
 
@@ -290,58 +303,65 @@ public:
     setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
   }
 
+  void writeToBLE(BLECharacteristic& destination, Vector3d vector) {
+    float buffer[3] = {(float)vector(0), (float)vector(1), (float)vector(2)};
+    destination.write(buffer, 3 * sizeof(float));
+    for (uint16_t conn_hdl = 0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    {
+      if (Bluefruit.connected(conn_hdl) && destination.notifyEnabled(conn_hdl))
+      {
+        destination.notify(buffer, 3 * sizeof(float));
+      }
+    }
+  }
+
+  Vector3d getVectorFromBuffer(float *buffer) {
+    // calibration of imu because imu is not aligned with bloch sphere
+    float rx = (1 - 2 * QB_SX) * buffer[QB_IX];
+    float ry = (1 - 2 * QB_SY) * buffer[QB_IY];
+    float rz = (1 - 2 * QB_SZ) * buffer[QB_IZ];
+    return Vector3d(rx, ry, rz);
+  }
+
   void readIMU(bool print=true) {
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
-    rbuffer[2] = imu.readFloatAccelZ();
-    rx = (1-2*sx)*rbuffer[ix];
-    ry = (1-2*sy)*rbuffer[iy];
-    rz = (1-2*sz)*rbuffer[iz];
+    rbuffer[2] = imu.readFloatAccelZ();    
+    rgyrobuffer[0] = imu.readFloatGyroX();
+    rgyrobuffer[1] = imu.readFloatGyroY();
+    rgyrobuffer[2] = imu.readFloatGyroZ();
 
     float T_new = micros();
     float delta = T_new - T_imu;
     T_imu = T_new;
-    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
-    if (delta > 100000) {
-      x = rx;
-      y = ry;
-      z = rz;
-    } else {
-      float d = delta/T;
-      x = d*rx+(1-d)*x;
-      y = d*ry+(1-d)*y;
-      z = d*rz+(1-d)*z;
-    }
 
-    t_acc = theta(x, y, z)*180/3.14159;
-    p_acc = phi(x, y)*180/3.14159;
-    if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
+    Vector3d newGyro = getVectorFromBuffer(rgyrobuffer) * PI / 180;
+    float d = min(delta / float(T_GYRO), 1.0f);
+    gyroVector = d * newGyro + (1 - d) * gyroVector; // low pass filter
+
+    Vector3d newGravity = getVectorFromBuffer(rbuffer);
+    d = min(delta / float(T_ACC), 1.0f);
+    gravityVector = d * newGravity + (1 - d) * gravityVector;
+
+    yaw += gravityVector.dot(gyroVector);
+    yaw = fmod(yaw, 2 * PI);
 
     if (print) {
-      Serial.print(x);
+      Serial.print(gravityVector(0));
       Serial.print("\t");
-      Serial.print(y);
+      Serial.print(gravityVector(1));
       Serial.print("\t");
-      Serial.print(z);
+      Serial.print(gravityVector(2));
       Serial.print("\t-1\t1\t");
-      Serial.print(t_acc);
+      Serial.print(gyroVector(0));
       Serial.print("\t");
-      Serial.print(p_acc);
-      Serial.print("\t-360\t360\t");
-      Serial.println();
+      Serial.print(gyroVector(1));
+      Serial.print("\t");
+      Serial.println(gyroVector(2));
     }
 
-    rbuffer[0] = x;
-    rbuffer[1] = y;
-    rbuffer[2] = z;
-    blecharacc.write(rbuffer, 3*sizeof(float));
-    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
-    {
-      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
-      {
-        blecharacc.notify(rbuffer, 3*sizeof(float));
-      }
-    }
+    writeToBLE(blecharacc, gravityVector);
+    writeToBLE(blechargyr, gyroVector);
   }
 
   void startBLEadv(void)
