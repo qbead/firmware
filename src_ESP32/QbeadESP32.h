@@ -157,25 +157,6 @@ void int1ISR()
 
 namespace Qbead {
 
-class MyServerCallbacks: public BLEServerCallbacks {
-  void onConnect(BLEServer* pServer) {
-    Serial.println("BLE: Device connected");
-  }
-  void onDisconnect(BLEServer* pServer) {
-    Serial.println("BLE: Device disconnected");
-  }
-};
-
-class ColorCharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    Serial.println("[INFO]{BLE} Received a write on the color characteristic");
-    uint8_t data[3] = pCharacteristic->getData();
-    Qbead::singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
-    Serial.print("[DEBUG]{BLE} Received");
-    Serial.println(Qbead::singletoninstance->c_ble, HEX);
-  }
-};
-
 class Coordinates
 {
 public:
@@ -394,7 +375,7 @@ public:
   float T_freeze = 0;
   float T_shaking = 0;
   float shakingCounter = 0;
-  uint32_t = c_ble;
+  uint32_t c_ble;
   bool frozen = false; // frozen means that there is an animation in progress
   bool shakingState = false; // if ShakingState is 1 detected shaking and if shaking keeps happening randomising state
   QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
@@ -585,6 +566,25 @@ public:
     Coordinates(1.95, 5.44),
     Coordinates(2.34, 5.5),
     Coordinates(3.14, 4.97),
+  };
+
+  class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      Serial.println("BLE: Device connected");
+    }
+    void onDisconnect(BLEServer* pServer) {
+      Serial.println("BLE: Device disconnected");
+    }
+  };
+
+  class ColorCharCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      Serial.println("[INFO]{BLE} Received a write on the color characteristic");
+      uint8_t* pData = pCharacteristic->getData();
+      Qbead::singletoninstance->c_ble =  (pData[2] << 16) | (pData[1] << 8) | pData[0];
+      Serial.print("[DEBUG]{BLE} Received");
+      Serial.println(Qbead::singletoninstance->c_ble, HEX);
+    }
   };
 
   void
