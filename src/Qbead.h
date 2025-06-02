@@ -270,8 +270,7 @@ public:
 
   void collapse()
   {
-    const float theta = stateCoordinates.theta();
-    const float a = (cos(theta) + 1) / 2; // probability of measuring |0>
+    const float a = (stateCoordinates.z() + 1) / 2; // probability of measuring |0>
     if (a < 0.0001) {
       stateCoordinates.set(0, 0, -1);
       return;
