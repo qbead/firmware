@@ -1,4 +1,4 @@
-#include <Qbead.h>
+#include <QbeadESP32.h>
 
 Qbead::Qbead bead;
 int rotationState = 0;
