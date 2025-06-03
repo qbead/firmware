@@ -28,18 +28,18 @@ using namespace Eigen;
 #define T_ACC 100000
 #define T_GYRO 10000
 
-const char QB_UUID_SERVICE[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
-const char QB_UUID_COL_CHAR[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+1,0x1f,0x0c,0xe3};
-const char QB_UUID_SPH_CHAR[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
-const char QB_UUID_ACC_CHAR[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
-const char QB_UUID_GYR_CHAR[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
+const char QB_UUID_SERVICE[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68b043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
+const char QB_UUID_COL_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68c043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+1,0x1f,0x0c,0xe3};
+const char QB_UUID_SPH_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68d043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
+const char QB_UUID_ACC_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68e043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const char QB_UUID_GYR_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68f043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
 
-const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 const std::complex<float>i(0, 1);
 
 // TODO manage namespaces better
@@ -356,8 +356,8 @@ public:
       :
         pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig))
   {}
-  
-  static Qbead *singletoninstance;
+
+  static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
   // LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
@@ -375,6 +375,7 @@ public:
   float T_freeze = 0;
   float T_shaking = 0;
   float shakingCounter = 0;
+  float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble;
   bool frozen = false; // frozen means that there is an animation in progress
   bool shakingState = false; // if ShakingState is 1 detected shaking and if shaking keeps happening randomising state
@@ -455,6 +456,7 @@ public:
   {
     blecharacc = bleservice->createCharacteristic(QB_UUID_ACC_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+    blecharacc->setValue(zerobuffer20, 3*sizeof(float));
   }
 
   // TODO: Check when the new flex-pcb has arrived
@@ -581,9 +583,22 @@ public:
     void onWrite(BLECharacteristic *pCharacteristic) {
       Serial.println("[INFO]{BLE} Received a write on the color characteristic");
       uint8_t* pData = pCharacteristic->getData();
-      Qbead::singletoninstance->c_ble =  (pData[2] << 16) | (pData[1] << 8) | pData[0];
-      Serial.print("[DEBUG]{BLE} Received");
-      Serial.println(Qbead::singletoninstance->c_ble, HEX);
+      singletoninstance->c_ble =  (pData[2] << 16) | (pData[1] << 8) | pData[0];
+      Serial.print("[DEBUG]{BLE}Qbead received");
+      Serial.println(singletoninstance->c_ble, HEX);
+    }
+  };
+  
+  class ThetaPhiCharCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      Serial.println("[INFO]{BLE} Received a write on the spherical coordinates characteristic");
+      uint8_t* pData = pCharacteristic->getData();
+      singletoninstance->t_ble = ((uint32_t)pData[0])*180/255;
+      singletoninstance->p_ble = ((uint32_t)pData[1])*360/255;
+      Serial.print("[DEBUG]{BLE} Received t=");
+      Serial.print(singletoninstance->t_ble);
+      Serial.print(" p=");
+      Serial.println(singletoninstance->p_ble);
     }
   };
 
@@ -623,15 +638,25 @@ public:
     blecharcol = bleservice->createCharacteristic(QB_UUID_COL_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
     blecharcol->setCallbacks(new ColorCharCallbacks());
+    blecharcol->setValue(zerobuffer20, 3);
     
     blecharsph = bleservice->createCharacteristic(QB_UUID_SPH_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
-    
-    
+    blecharsph->setCallbacks(new ThetaPhiCharCallbacks());
+    blecharsph->setValue(zerobuffer20, 2);
+
     blechargyr = bleservice->createCharacteristic(QB_UUID_GYR_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+    blechargyr->setValue(zerobuffer20, 3*sizeof(float));
+                  
+    startAccelerometer();
 
-    bleservice->start();
+    if (bleservice) {
+      Serial.println("starting service");
+      bleservice->start();
+    } else {
+      Serial.println("Service is null!");
+    }
     startBLEadv();
     // Tap detection
     // setupTapInterrupt();
@@ -880,8 +905,14 @@ public:
 
   void writeToBLE(BLECharacteristic* destination, Vector3d vector) {
     float buffer[] = {(float)vector(0), (float)vector(1), (float)vector(2)};
-    destination->setValue((uint8_t*)buffer, sizeof(buffer));
-    destination->notify();
+    if (destination) 
+    {
+      destination->setValue((uint8_t*)buffer, sizeof(buffer));
+      destination->notify();
+    } else
+    {
+      Serial.println("destination is null");
+    }
   }
 
   Vector3d getVectorFromBuffer(float *buffer) {
@@ -935,8 +966,12 @@ public:
       Serial.println(gyroVector(2));
     }
     
+    if (blecharacc) {
     writeToBLE(blecharacc, gravityVector);
+    }
+    if (blechargyr) {
     writeToBLE(blechargyr, gyroVector);
+    }
   }
 }; // end class
 
