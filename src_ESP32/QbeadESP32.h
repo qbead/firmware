@@ -9,6 +9,7 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
+#include <BLE2902.h>
 
 using namespace Eigen;
 
@@ -456,6 +457,10 @@ public:
   {
     blecharacc = bleservice->createCharacteristic(QB_UUID_ACC_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+    BLEDescriptor* pAccDesc = new BLEDescriptor("2901");
+    pAccDesc->setValue("Accelerometer readout Characteristic");
+    blecharacc->addDescriptor(pAccDesc);
+    blecharacc->addDescriptor(new BLE2902());
     blecharacc->setValue(zerobuffer20, 3*sizeof(float));
   }
 
@@ -637,16 +642,26 @@ public:
     float zerobufferfloat[] = {0.0f, 0.0f, 0.0f};
     blecharcol = bleservice->createCharacteristic(QB_UUID_COL_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+    BLEDescriptor* pColDesc = new BLEDescriptor("2901");
+    pColDesc->setValue("Color Characteristic");
+    blecharcol->addDescriptor(pColDesc);
     blecharcol->setCallbacks(new ColorCharCallbacks());
     blecharcol->setValue(zerobuffer20, 3);
     
     blecharsph = bleservice->createCharacteristic(QB_UUID_SPH_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+    BLEDescriptor* pSphDesc = new BLEDescriptor("2901");
+    pSphDesc->setValue("Theta and Phi Characteristic");
+    blecharsph->addDescriptor(pSphDesc);
     blecharsph->setCallbacks(new ThetaPhiCharCallbacks());
     blecharsph->setValue(zerobuffer20, 2);
 
     blechargyr = bleservice->createCharacteristic(QB_UUID_GYR_CHAR,
                   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+    BLEDescriptor* pGyrDesc = new BLEDescriptor("2901");
+    pGyrDesc->setValue("Gyroscope readout Characteristic");
+    blechargyr->addDescriptor(pGyrDesc);
+    blechargyr->addDescriptor(new BLE2902());
     blechargyr->setValue(zerobuffer20, 3*sizeof(float));
                   
     startAccelerometer();
