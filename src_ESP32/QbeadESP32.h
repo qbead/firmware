@@ -16,7 +16,7 @@ using namespace Eigen;
 // default configs
 #define QB_LEDPIN 9
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
-#define QB_IMU_ADDR 0x6A
+#define QB_IMU_ADDR 0x68
 #define QB_IX 1
 #define QB_IY 0
 #define QB_IZ 2
@@ -353,13 +353,13 @@ public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
         const uint16_t pixelconfig = QB_PIXELCONFIG,
         const uint8_t imu_addr = QB_IMU_ADDR)
-      :
+      : imu(LSM6DS3(I2C_MODE, imu_addr)),
         pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig))
   {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
-  // LSM6DS3 imu;
+  LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
   BLEServer* bleserver;
@@ -938,18 +938,12 @@ public:
   }
 
   void readIMU(bool print=true) {
-    // rbuffer[0] = imu.readFloatAccelX();
-    // rbuffer[1] = imu.readFloatAccelY();
-    // rbuffer[2] = imu.readFloatAccelZ();    
-    // rgyrobuffer[0] = imu.readFloatGyroX();
-    // rgyrobuffer[1] = imu.readFloatGyroY();
-    // rgyrobuffer[2] = imu.readFloatGyroZ();
-    rbuffer[0] = 0;
-    rbuffer[1] = 0;
-    rbuffer[2] = 1; // gravity vector
-    rgyrobuffer[0] = 0;
-    rgyrobuffer[1] = 0;
-    rgyrobuffer[2] = 0; // gyro vector
+    rbuffer[0] = imu.readFloatAccelX();
+    rbuffer[1] = imu.readFloatAccelY();
+    rbuffer[2] = imu.readFloatAccelZ();    
+    rgyrobuffer[0] = imu.readFloatGyroX();
+    rgyrobuffer[1] = imu.readFloatGyroY();
+    rgyrobuffer[2] = imu.readFloatGyroZ();
 
     float T_new = micros();
     float delta = T_new - T_imu;
