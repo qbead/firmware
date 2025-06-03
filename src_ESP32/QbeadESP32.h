@@ -14,7 +14,7 @@
 using namespace Eigen;
 
 // default configs
-#define QB_LEDPIN 9
+#define QB_LEDPIN 21
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
 #define QB_IMU_ADDR 0x68
 #define QB_IX 1
