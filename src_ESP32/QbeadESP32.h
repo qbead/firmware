@@ -3,7 +3,8 @@
 
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
-#include <LSM6DS3.h>
+#include <Wire.h>
+#include <ICM_20948.h>
 #include <math.h>
 #include <ArduinoEigen.h>
 #include <BLEDevice.h>
@@ -28,6 +29,8 @@ using namespace Eigen;
 #define QB_MAX_PRPH_CONNECTION 2
 #define T_ACC 100000
 #define T_GYRO 10000
+
+ICM_20948_I2C imu;
 
 const char QB_UUID_SERVICE[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68b043";
 // {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
@@ -353,13 +356,11 @@ public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
         const uint16_t pixelconfig = QB_PIXELCONFIG,
         const uint8_t imu_addr = QB_IMU_ADDR)
-      : imu(LSM6DS3(I2C_MODE, imu_addr)),
-        pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig))
+      : pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig))
   {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
-  LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
   BLEServer* bleserver;
@@ -609,6 +610,8 @@ public:
   void
   begin()
   {
+    Wire.begin(40, 39);
+    Wire.setClock(100000);  // drop to 100kHz
     singletoninstance = this;
     Serial.begin(9600);
     for (int waitCount = 0; waitCount < 50; waitCount++)
@@ -676,6 +679,8 @@ public:
     // setupTapInterrupt();
     // pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
     // attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
+    delay(100); // wait for the I2C bus to stabilize
+    imu.begin(Wire, QB_IMU_ADDR);
   }
 
   void startBLEadv(void)
@@ -938,12 +943,13 @@ public:
   }
 
   void readIMU(bool print=true) {
-    rbuffer[0] = imu.readFloatAccelX();
-    rbuffer[1] = imu.readFloatAccelY();
-    rbuffer[2] = imu.readFloatAccelZ();    
-    rgyrobuffer[0] = imu.readFloatGyroX();
-    rgyrobuffer[1] = imu.readFloatGyroY();
-    rgyrobuffer[2] = imu.readFloatGyroZ();
+    imu.getAGMT();
+    rbuffer[0] = imu.accX();
+    rbuffer[1] = imu.accY();
+    rbuffer[2] = imu.accZ();  
+    rgyrobuffer[0] = imu.gyrX();
+    rgyrobuffer[1] = imu.gyrY();
+    rgyrobuffer[2] = imu.gyrZ();
 
     float T_new = micros();
     float delta = T_new - T_imu;
