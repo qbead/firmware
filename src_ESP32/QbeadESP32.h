@@ -17,7 +17,7 @@ using namespace Eigen;
 // default configs
 #define QB_LEDPIN 21
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
-#define QB_IMU_ADDR 0x68
+#define QB_IMU_ADDR 0x69
 #define QB_IX 1
 #define QB_IY 0
 #define QB_IZ 2
@@ -611,7 +611,7 @@ public:
   begin()
   {
     Wire.begin(40, 39);
-    Wire.setClock(100000);  // drop to 100kHz
+    Wire.setClock(50000);  // drop to 50kHz
     singletoninstance = this;
     Serial.begin(9600);
     for (int waitCount = 0; waitCount < 50; waitCount++)
@@ -943,10 +943,14 @@ public:
   }
 
   void readIMU(bool print=true) {
+    while (!imu.dataReady()) {
+      delay(20);  // 1-2 ms delay is fine
+    }
+
     imu.getAGMT();
-    rbuffer[0] = imu.accX();
-    rbuffer[1] = imu.accY();
-    rbuffer[2] = imu.accZ();  
+    rbuffer[0] = imu.accX() / 1000.0f; // convert to g
+    rbuffer[1] = imu.accY() / 1000.0f;
+    rbuffer[2] = imu.accZ() / 1000.0f;  
     rgyrobuffer[0] = imu.gyrX();
     rgyrobuffer[1] = imu.gyrY();
     rgyrobuffer[2] = imu.gyrZ();
