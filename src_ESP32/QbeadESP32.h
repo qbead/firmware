@@ -5,6 +5,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <Wire.h>
 #include <ICM_20948.h>
+#include <ICM20948_WE.h>
 #include <math.h>
 #include <ArduinoEigen.h>
 #include <BLEDevice.h>
@@ -30,8 +31,6 @@ using namespace Eigen;
 #define T_ACC 100000
 #define T_GYRO 10000
 
-ICM_20948_I2C imu;
-
 const char QB_UUID_SERVICE[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68b043";
 // {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
 const char QB_UUID_COL_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68c043";
@@ -45,6 +44,8 @@ const char QB_UUID_GYR_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68f043";
 
 uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 const std::complex<float>i(0, 1);
+
+ICM20948_WE imu;
 
 // TODO manage namespaces better
 // The setPixelColor switches blue and green
@@ -371,7 +372,6 @@ public:
   BLECharacteristic* blechargyr;
   BLEAdvertising* bleadvertising;
 
-  float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
   float T_freeze = 0;
   float T_shaking = 0;
@@ -625,16 +625,8 @@ public:
     setBrightness(10);
 
     Serial.println("[INFO] Booting... Qbead on XIAO ESP32 compiled on " __DATE__ " at " __TIME__);
-    // if (!imu.begin()) {
-    //   Serial.println("[DEBUG]{IMU} IMU initialized correctly");
-    // } else {
-    //   Serial.println("[ERROR]{IMU} IMU failed to initialize");
-    // }
 
     BLEDevice::init("qbead | " __DATE__ " " __TIME__);
-    // Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
-    // Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
-    // Bluefruit.Periph.setConnectCallback(connect_callback);
     bleserver = BLEDevice::createServer();
     bleserver->setCallbacks(new MyServerCallbacks());
     bleservice = bleserver->createService(QB_UUID_SERVICE);
@@ -679,8 +671,10 @@ public:
     // setupTapInterrupt();
     // pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
     // attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
-    delay(100); // wait for the I2C bus to stabilize
-    imu.begin(Wire, QB_IMU_ADDR);
+    imu = ICM20948_WE(&Wire, QB_IMU_ADDR);
+    imu.setGyrRange(ICM20948_GYRO_RANGE_2000);
+    imu.setAccDLPF(ICM20948_DLPF_6);
+    imu.setAccRange(ICM20948_ACC_RANGE_16G);
   }
 
   void startBLEadv(void)
@@ -692,12 +686,6 @@ public:
     BLEAdvertisementData advertisementData;
     advertisementData.setName("qbead | " __DATE__ " " __TIME__);
     advertisementData.setFlags(6); // BLE_SIG_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE = 6
-
-    // Bluefruit.Advertising.addTxPower();
-
-    // Secondary Scan Response packet (optional)
-    // Since there is no room for 'Name' in Advertising packet
-    // Bluefruit.ScanResponse.addName();
 
     /* Start Advertising
     * - Enable auto advertising if disconnected
@@ -714,9 +702,6 @@ public:
     bleadvertising->setMaxInterval(244);
   
     BLEDevice::startAdvertising();
-    // Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
-    // Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
-    // Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
   }
 
   void clear() {
@@ -934,7 +919,8 @@ public:
     }
   }
 
-  Vector3d getVectorFromBuffer(float *buffer) {
+  Vector3d getVector(xyzFloat* xyz) {
+    float buffer[3] = {xyz->x, xyz->y, xyz->z};
     // calibration of imu because imu is not aligned with bloch sphere
     float rx = (1 - 2 * QB_SX) * buffer[QB_IX];
     float ry = (1 - 2 * QB_SY) * buffer[QB_IY];
@@ -943,27 +929,21 @@ public:
   }
 
   void readIMU(bool print=true) {
-    while (!imu.dataReady()) {
-      delay(20);  // 1-2 ms delay is fine
-    }
-
-    imu.getAGMT();
-    rbuffer[0] = imu.accX() / 1000.0f; // convert to g
-    rbuffer[1] = imu.accY() / 1000.0f;
-    rbuffer[2] = imu.accZ() / 1000.0f;  
-    rgyrobuffer[0] = imu.gyrX();
-    rgyrobuffer[1] = imu.gyrY();
-    rgyrobuffer[2] = imu.gyrZ();
+    xyzFloat gyr;
+    xyzFloat acc;
+    imu.readSensor();
+    imu.getGyrValues(&gyr);
+    imu.getAccRawValues(&acc);
 
     float T_new = micros();
     float delta = T_new - T_imu;
     T_imu = T_new;
 
-    Vector3d newGyro = getVectorFromBuffer(rgyrobuffer) * PI / 180;
+    Vector3d newGyro = getVector(&gyr) * PI / 180;
     float d = min(delta / float(T_GYRO), 1.0f);
     gyroVector = d * newGyro + (1 - d) * gyroVector; // low pass filter
 
-    Vector3d newGravity = getVectorFromBuffer(rbuffer);
+    Vector3d newGravity = getVector(&acc) / 1000.0f; // convert to g
     d = min(delta / float(T_ACC), 1.0f);
     gravityVector = d * newGravity + (1 - d) * gravityVector;
 
@@ -985,10 +965,10 @@ public:
     }
     
     if (blecharacc) {
-    writeToBLE(blecharacc, gravityVector);
+      writeToBLE(blecharacc, gravityVector);
     }
     if (blechargyr) {
-    writeToBLE(blechargyr, gyroVector);
+      writeToBLE(blechargyr, gyroVector);
     }
   }
 }; // end class
@@ -997,4 +977,4 @@ Qbead *Qbead::singletoninstance = nullptr;
 
 } // end namespace
 
-#endif // QBEAD_H 
+#endif // QBEAD_H
