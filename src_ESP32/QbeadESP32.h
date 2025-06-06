@@ -674,7 +674,7 @@ public:
     imu = ICM20948_WE(&Wire, QB_IMU_ADDR);
     imu.setGyrRange(ICM20948_GYRO_RANGE_2000);
     imu.setAccDLPF(ICM20948_DLPF_6);
-    imu.setAccRange(ICM20948_ACC_RANGE_16G);
+    imu.setAccRange(ICM20948_ACC_RANGE_8G);
   }
 
   void startBLEadv(void)
