@@ -25,13 +25,14 @@ using namespace Eigen;
 #define QB_SX 0
 #define QB_SY 0
 #define QB_SZ 1
-#define GYRO_GATE_THRESHOLD 8
+#define GYRO_GATE_THRESHOLD 12
 #define QB_PIXEL_COUNT 62
 #define QB_MAX_PRPH_CONNECTION 2
 #define T_ACC 100000
 #define T_GYRO 10000
-
-ICM_20948_I2C imu;
+#define TAP_THRESHOLD_TIME 400 // Threshold for tap detection in milliseconds
+#define TAP_THRESHOLD 8 // Threshold for tap detection in g/s
+#define DEBOUNCE_TIME 50 // Debounce time in milliseconds
 
 const char QB_UUID_SERVICE[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68b043";
 // {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
@@ -46,7 +47,9 @@ const char QB_UUID_GYR_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68f043";
 
 uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 const std::complex<float>i(0, 1);
-ICM20948_WE myImu;
+// We need both because ICM_20948_I2C does not support changing the gyro range
+ICM20948_WE imuWE;
+ICM_20948_I2C imuI2C;
 
 // TODO manage namespaces better
 // The setPixelColor switches blue and green
@@ -136,29 +139,6 @@ void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
   x = sin(theta) * cos(phi);
   y = sin(theta) * sin(phi);
   z = cos(theta);
-}
-
-// Tap detection
-// LSM6DS3 myIMU(I2C_MODE, QB_IMU_ADDR); // Create an instance of the IMU
-uint8_t interruptCount = 0; // Amount of received interrupts
-uint8_t prevInterruptCount = 0; // Interrupt Counter from last loop
-
-void setupTapInterrupt() {
-  uint8_t error = 0;
-  uint8_t dataToWrite = 0;
-
-  // Double Tap Config
-  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60);
-  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x8E);// INTERRUPTS_ENABLE, SLOPE_FDS
-  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x6C);
-  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);
-  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x80);
-  // myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x08);
-}
-
-void int1ISR()
-{
-  interruptCount++;
 }
 
 namespace Qbead {
@@ -385,8 +365,12 @@ public:
   QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
   Coordinates visualState = Coordinates(-0.866, 0.25, -0.433);
   Vector3d gravityVector = Vector3d(0, 0, 1);
+  Vector3d oldGravityVector = Vector3d(0, 0, 1);
   Vector3d gyroVector = Vector3d(0, 0, 1);
-  float yaw = 0;
+  float lastTapTime = 0;
+  float lastDebounceTime = 0; // last time the tap was debounced
+  bool waitingForSecondTap = false;
+  float dt = 0; // time since the last IMU update
 
   // led map index to Coordinates
   // This map is for the first version of the flex-pcb
@@ -672,17 +656,12 @@ public:
       Serial.println("Service is null!");
     }
     startBLEadv();
-    // Tap detection
-    // setupTapInterrupt();
-    // pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
-    // attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
-    delay(100); // wait for the I2C bus to stabilize
-    imu.begin(Wire, QB_IMU_ADDR);
-
-    myImu = ICM20948_WE(&Wire, QB_IMU_ADDR);
-    myImu.setGyrRange(ICM20948_GYRO_RANGE_2000);
-    myImu.setAccDLPF(ICM20948_DLPF_6);
-    myImu.setAccRange(ICM20948_ACC_RANGE_8G);
+    
+    imuI2C.begin(Wire, QB_IMU_ADDR);
+    imuWE = ICM20948_WE(&Wire, QB_IMU_ADDR);
+    imuWE.setGyrRange(ICM20948_GYRO_RANGE_2000);
+    imuWE.setAccDLPF(ICM20948_DLPF_6);
+    imuWE.setAccRange(ICM20948_ACC_RANGE_8G);
   }
 
   void startBLEadv(void)
@@ -705,7 +684,6 @@ public:
     * https://developer.apple.com/library/content/qa/qa1931/_index.html
     */
     bleadvertising->setAdvertisementData(advertisementData);
-    // Bluefruit.Advertising.restartOnDisconnect(true);
     bleadvertising->setMinInterval(32);
     bleadvertising->setMaxInterval(244);
   
@@ -788,11 +766,7 @@ public:
 
   void animateTo(uint8_t gate, uint16_t animationLength = 2000)
   {
-    if (frozen)
-    {
-      prevInterruptCount = interruptCount;
-    }
-    else if (gate == 0)
+    if (gate == 0)
     {
       return;
     }
@@ -841,7 +815,6 @@ public:
         setLed(state.getCoordinates(), color(255, 0, 255));
         show();
         shakingState = false;
-        prevInterruptCount = interruptCount;
         return true;
       }
       if (shakingCounter > 800)
@@ -858,6 +831,48 @@ public:
       T_shaking = millis();
       shakingCounter = 0;
     } 
+    return false;
+  }
+
+  bool detectDoubleTap(float acc)
+  {
+    float currentTime = millis();
+
+    // Check for tap condition
+    if (abs(acc) > TAP_THRESHOLD)
+    {
+      // Debounce: ensure enough time since last detected tap
+      if (currentTime - lastDebounceTime > DEBOUNCE_TIME)
+      {
+        lastDebounceTime = currentTime;
+
+        if (waitingForSecondTap)
+        {
+          if (currentTime - lastTapTime <= TAP_THRESHOLD_TIME)
+          {
+            waitingForSecondTap = false;
+            return true; // Second tap detected within threshold time
+          }
+          else
+          {
+            // Too late — treat this as new first tap
+            lastTapTime = currentTime;
+          }
+        }
+        else
+        {
+          // First tap detected
+          lastTapTime = currentTime;
+          waitingForSecondTap = true;
+        }
+      }
+    }
+
+    // If waiting too long for second tap, reset state
+    if (waitingForSecondTap && (currentTime - lastTapTime > TAP_THRESHOLD_TIME))
+    {
+      waitingForSecondTap = false;
+    }
     return false;
   }
 
@@ -878,25 +893,23 @@ public:
       frozen = false;
       return 0;
     }
-    // Handle tap interrupt
-    if (interruptCount > prevInterruptCount)
+    // Handle double tap
+    float acc = (gravityVector(2) - oldGravityVector(2)) * 1000000 / dt;
+    Serial.print("acc: ");
+    Serial.println(acc);
+    if (detectDoubleTap(acc))
     {
-      uint8_t tapStatus = 0;
-      // myIMU.readRegister(&tapStatus, LSM6DS3_ACC_GYRO_TAP_SRC);
-      prevInterruptCount = interruptCount;
-
-      if (tapStatus & 0x01)
-      {
-        Serial.println("Collapsing");
-        return 8;
-      }
-      else
-      {
-        Serial.println("Executing H gate");
-        return 7;
-      }
+      Serial.println("Collapse detected");
+      return 8; // collapse
     }
-    // Handle shaking
+    float accX = (gravityVector(0) - oldGravityVector(0)) * 1000000 / dt;
+    float accY = (gravityVector(1) - oldGravityVector(1)) * 1000000 / dt;
+    if (detectDoubleTap(accX) || detectDoubleTap(accY))
+    {
+      Serial.println("Hadamard detected");
+      return 7; // Hadamard
+    }
+    // Handle rotating
     for (int i = 0; i < 3; i++)
     {
       if (gyroVector[i] > GYRO_GATE_THRESHOLD)
@@ -936,32 +949,30 @@ public:
   }
 
   void readIMU(bool print=true) {
-    while (!imu.dataReady()) {
+    while (!imuI2C.dataReady()) {
       delay(20);  // 1-2 ms delay is fine
     }
 
-    imu.getAGMT();
-    rbuffer[0] = imu.accX() / 1000.0f; // convert to g
-    rbuffer[1] = imu.accY() / 1000.0f;
-    rbuffer[2] = imu.accZ() / 1000.0f;  
-    rgyrobuffer[0] = imu.gyrX();
-    rgyrobuffer[1] = imu.gyrY();
-    rgyrobuffer[2] = imu.gyrZ();
+    imuI2C.getAGMT();
+    rbuffer[0] = imuI2C.accX() / 1000.0f; // convert to g
+    rbuffer[1] = imuI2C.accY() / 1000.0f;
+    rbuffer[2] = imuI2C.accZ() / 1000.0f;  
+    rgyrobuffer[0] = imuI2C.gyrX();
+    rgyrobuffer[1] = imuI2C.gyrY();
+    rgyrobuffer[2] = imuI2C.gyrZ();
 
     float T_new = micros();
-    float delta = T_new - T_imu;
+    dt = T_new - T_imu;
     T_imu = T_new;
 
     Vector3d newGyro = getVectorFromBuffer(rgyrobuffer) * PI / 180;
-    float d = min(delta / float(T_GYRO), 1.0f);
+    float d = min(dt / float(T_GYRO), 1.0f);
     gyroVector = d * newGyro + (1 - d) * gyroVector; // low pass filter
 
     Vector3d newGravity = getVectorFromBuffer(rbuffer);
-    d = min(delta / float(T_ACC), 1.0f);
+    d = min(dt / float(T_ACC), 1.0f);
+    oldGravityVector = gravityVector;
     gravityVector = d * newGravity + (1 - d) * gravityVector;
-
-    yaw += gravityVector.dot(gyroVector);
-    yaw = fmod(yaw, 2 * PI);
 
     if (print) {
       Serial.print(gravityVector(0));
@@ -978,10 +989,10 @@ public:
     }
     
     if (blecharacc) {
-    writeToBLE(blecharacc, gravityVector);
+      writeToBLE(blecharacc, gravityVector);
     }
     if (blechargyr) {
-    writeToBLE(blechargyr, gyroVector);
+      writeToBLE(blechargyr, gyroVector);
     }
   }
 }; // end class
