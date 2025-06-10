@@ -838,6 +838,12 @@ public:
   {
     float currentTime = millis();
 
+    // If waiting too long for second tap, reset state
+    if (waitingForSecondTap && (currentTime - lastTapTime > TAP_THRESHOLD_TIME))
+    {
+      waitingForSecondTap = false;
+    }
+
     // Check for tap condition
     if (abs(acc) > TAP_THRESHOLD)
     {
@@ -848,16 +854,8 @@ public:
 
         if (waitingForSecondTap)
         {
-          if (currentTime - lastTapTime <= TAP_THRESHOLD_TIME)
-          {
-            waitingForSecondTap = false;
-            return true; // Second tap detected within threshold time
-          }
-          else
-          {
-            // Too late — treat this as new first tap
-            lastTapTime = currentTime;
-          }
+          waitingForSecondTap = false;
+          return true; // Second tap detected within threshold time
         }
         else
         {
@@ -866,12 +864,6 @@ public:
           waitingForSecondTap = true;
         }
       }
-    }
-
-    // If waiting too long for second tap, reset state
-    if (waitingForSecondTap && (currentTime - lastTapTime > TAP_THRESHOLD_TIME))
-    {
-      waitingForSecondTap = false;
     }
     return false;
   }
