@@ -386,7 +386,6 @@ public:
   float T_imu;             // last update from the IMU
   float T_freeze = 0;
   float T_shaking = 0;
-  float shakingCounter = 0;
   bool frozen = false; // frozen means that there is an animation in progress
   bool shakingState = false; // if ShakingState is 1 detected shaking and if shaking keeps happening randomising state
   QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
@@ -662,8 +661,7 @@ public:
     if (shakingState)
     {
       float newTime = millis();
-      shakingCounter += newTime - T_shaking;
-      T_shaking = newTime;
+      float shakingCounter = newTime - T_shaking;
       if (shakingCounter < 300)
       {
         return false;
@@ -675,9 +673,7 @@ public:
         float randomPhi = (random(0, 1000)/500.0f) * PI;
         state.setCoordinates(Coordinates(randomTheta, randomPhi));
         setLed(state.getCoordinates(), color(255, 0, 255));
-        show();
         shakingState = false;
-        prevInterruptCount = interruptCount;
         return true;
       }
       if (shakingCounter > 800)
@@ -692,7 +688,6 @@ public:
       Serial.println(totalAcceleration);
       shakingState = true;
       T_shaking = millis();
-      shakingCounter = 0;
     } 
     return false;
   }
