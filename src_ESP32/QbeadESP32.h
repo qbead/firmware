@@ -832,7 +832,7 @@ public:
       {
         return false;
       }
-      if (totalAcceleration > 11)
+      if (totalAcceleration > 3)
       {
         Serial.println("Randomizing");
         float randomTheta = (random(0, 1000)/1000.0f) * PI;
@@ -850,7 +850,7 @@ public:
       }
       return false;
     }
-    if (totalAcceleration > 11)
+    if (totalAcceleration > 3)
     {
       Serial.print("Detected shaking turning on shakingState, acc length: ");
       Serial.println(totalAcceleration);
@@ -990,4 +990,4 @@ Qbead *Qbead::singletoninstance = nullptr;
 
 } // end namespace
 
-#endif // QBEAD_H 
+#endif // QBEAD_H
