@@ -31,7 +31,7 @@ using namespace Eigen;
 #define T_ACC 100000
 #define T_GYRO 10000
 #define TAP_THRESHOLD_TIME 400 // Threshold for tap detection in milliseconds
-#define TAP_THRESHOLD 8 // Threshold for tap detection in g/s
+#define TAP_THRESHOLD 5 // Threshold for tap detection in g/s
 #define DEBOUNCE_TIME 50 // Debounce time in milliseconds
 
 const char QB_UUID_SERVICE[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68b043";
@@ -598,7 +598,7 @@ public:
     Wire.begin(40, 39);
     Wire.setClock(50000);  // drop to 50kHz
     singletoninstance = this;
-    Serial.begin(9600);
+    Serial.begin(115200);
     for (int waitCount = 0; waitCount < 50; waitCount++)
     {
       if (Serial) {break;}
@@ -826,6 +826,7 @@ public:
       Serial.println(totalAcceleration);
       shakingState = true;
       T_shaking = millis();
+      waitingForSecondTap = false; // reset double tap detection
     } 
     return false;
   }
@@ -859,6 +860,9 @@ public:
           lastTapTime = currentTime;
           waitingForSecondTap = true;
         }
+      } else if (currentTime - lastDebounceTime > 30) {
+        // reset because it was a shake, not a tap
+        waitingForSecondTap = false;
       }
     }
     return false;
@@ -938,7 +942,7 @@ public:
 
   void readIMU(bool print=true) {
     while (!imuI2C.dataReady()) {
-      delay(20);  // 1-2 ms delay is fine
+      delay(1);  // 1-2 ms delay is fine
     }
 
     imuI2C.getAGMT();
