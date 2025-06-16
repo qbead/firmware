@@ -3,42 +3,53 @@
 
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
-#include <LSM6DS3.h>
+#include <Wire.h>
+#include <ICM_20948.h>
+#include <ICM20948_WE.h>
 #include <math.h>
 #include <ArduinoEigen.h>
-#include <bluefruit.h>
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+#include <BLE2902.h>
 
 using namespace Eigen;
 
 // default configs
-#define QB_LEDPIN 10
+#define QB_LEDPIN 21
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
-#define QB_IMU_ADDR 0x6A
+#define QB_IMU_ADDR 0x69
 #define QB_IX 1
 #define QB_IY 0
 #define QB_IZ 2
 #define QB_SX 0
 #define QB_SY 0
 #define QB_SZ 1
-#define GYRO_GATE_THRESHOLD 8
+#define GYRO_GATE_THRESHOLD 12
 #define QB_PIXEL_COUNT 62
 #define QB_MAX_PRPH_CONNECTION 2
 #define T_ACC 100000
 #define T_GYRO 10000
+#define TAP_THRESHOLD_TIME 400 // Threshold for tap detection in milliseconds
+#define TAP_THRESHOLD 5 // Threshold for tap detection in g/s
+#define DEBOUNCE_TIME 50 // Debounce time in milliseconds
 
-const uint8_t QB_UUID_SERVICE[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
-const uint8_t QB_UUID_COL_CHAR[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+1,0x1f,0x0c,0xe3};
-const uint8_t QB_UUID_SPH_CHAR[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
-const uint8_t QB_UUID_ACC_CHAR[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
-const uint8_t QB_UUID_GYR_CHAR[] =
-{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
+const char QB_UUID_SERVICE[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68b043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6,0x1f,0x0c,0xe3};
+const char QB_UUID_COL_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68c043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+1,0x1f,0x0c,0xe3};
+const char QB_UUID_SPH_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68d043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
+const char QB_UUID_ACC_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68e043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const char QB_UUID_GYR_CHAR[] = "e5eaa0bd-babb-4e8c-a0f8-054ade68f043";
+// {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
 
-const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 const std::complex<float>i(0, 1);
+// We need both because ICM_20948_I2C does not support changing the gyro range
+ICM20948_WE imuWE;
+ICM_20948_I2C imuI2C;
 
 // TODO manage namespaces better
 // The setPixelColor switches blue and green
@@ -103,18 +114,6 @@ bool checkThetaAndPhi(float theta, float phi) {
   return theta >= 0 && theta <= 180 && phi >= 0 && phi <= 360;
 }
 
-void connect_callback(uint16_t conn_handle)
-{
-  // Get the reference to current connection
-  BLEConnection* connection = Bluefruit.Connection(conn_handle);
-
-  char central_name[32] = { 0 };
-  connection->getPeerName(central_name, sizeof(central_name));
-
-  Serial.print("[INFO]{BLE} Connected to "); // TODO take care of cases where Serial is not available
-  Serial.println(central_name);
-}
-
 // In rads
 void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
 {
@@ -140,29 +139,6 @@ void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
   x = sin(theta) * cos(phi);
   y = sin(theta) * sin(phi);
   z = cos(theta);
-}
-
-// Tap detection
-LSM6DS3 myIMU(I2C_MODE, QB_IMU_ADDR); // Create an instance of the IMU
-uint8_t interruptCount = 0; // Amount of received interrupts
-uint8_t prevInterruptCount = 0; // Interrupt Counter from last loop
-
-void setupTapInterrupt() {
-  uint8_t error = 0;
-  uint8_t dataToWrite = 0;
-
-  // Double Tap Config
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x8E);// INTERRUPTS_ENABLE, SLOPE_FDS
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x6C);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x80);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x08);
-}
-
-void int1ISR()
-{
-  interruptCount++;
 }
 
 namespace Qbead {
@@ -362,40 +338,38 @@ public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
         const uint16_t pixelconfig = QB_PIXELCONFIG,
         const uint8_t imu_addr = QB_IMU_ADDR)
-      : imu(LSM6DS3(I2C_MODE, imu_addr)),
-        pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig)),
-        bleservice(QB_UUID_SERVICE),
-        blecharcol(QB_UUID_COL_CHAR),
-        blecharsph(QB_UUID_SPH_CHAR),
-        blecharacc(QB_UUID_ACC_CHAR),
-        blechargyr(QB_UUID_GYR_CHAR)
+      : pixels(Adafruit_NeoPixel(QB_PIXEL_COUNT, pin00, pixelconfig))
   {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
-  LSM6DS3 imu;
   Adafruit_NeoPixel pixels;
 
-  BLEService bleservice;
-  BLECharacteristic blecharcol;
-  BLECharacteristic blecharsph;
-  BLECharacteristic blecharacc;
-  BLECharacteristic blechargyr;
+  BLEServer* bleserver;
+  BLEService* bleservice;
+  BLECharacteristic* blecharcol;
+  BLECharacteristic* blecharsph;
+  BLECharacteristic* blecharacc;
+  BLECharacteristic* blechargyr;
+  BLEAdvertising* bleadvertising;
 
   float rbuffer[3], rgyrobuffer[3];
   float T_imu;             // last update from the IMU
   float T_freeze = 0;
   float T_shaking = 0;
+  float t_ble, p_ble; // theta and phi as sent over BLE connection
+  uint32_t c_ble;
   bool frozen = false; // frozen means that there is an animation in progress
   bool shakingState = false; // if ShakingState is 1 detected shaking and if shaking keeps happening randomising state
   QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
   Coordinates visualState = Coordinates(-0.866, 0.25, -0.433);
   Vector3d gravityVector = Vector3d(0, 0, 1);
+  Vector3d oldGravityVector = Vector3d(0, 0, 1);
   Vector3d gyroVector = Vector3d(0, 0, 1);
-  float yaw = 0;
-
-  float t_ble, p_ble; // theta and phi as sent over BLE connection
-  uint32_t c_ble = 0xffffff; // color as sent over BLE connection
+  float lastTapTime = 0;
+  float lastDebounceTime = 0; // last time the tap was debounced
+  bool waitingForSecondTap = false;
+  float dt = 0; // time since the last IMU update
 
   // led map index to Coordinates
   // This map is for the first version of the flex-pcb
@@ -464,36 +438,167 @@ public:
     Coordinates(0.866, -0.25, -0.433),
   };
 
-  static void ble_callback_color(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-    Serial.println("[INFO]{BLE} Received a write on the color characteristic");
-    singletoninstance->c_ble =  (data[2] << 16) | (data[1] << 8) | data[0];
-    Serial.print("[DEBUG]{BLE} Received");
-    Serial.println(singletoninstance->c_ble, HEX);
+  void startAccelerometer() 
+  {
+    blecharacc = bleservice->createCharacteristic(QB_UUID_ACC_CHAR,
+                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+    BLEDescriptor* pAccDesc = new BLEDescriptor("2901");
+    pAccDesc->setValue("Accelerometer readout Characteristic");
+    blecharacc->addDescriptor(pAccDesc);
+    blecharacc->addDescriptor(new BLE2902());
+    blecharacc->setValue(zerobuffer20, 3*sizeof(float));
   }
 
-  static void ble_callback_theta_phi(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len){
-    Serial.println("[INFO]{BLE} Received a write on the spherical coordinates characteristic");
-    singletoninstance->t_ble = ((uint32_t)data[0])*180/255;
-    singletoninstance->p_ble = ((uint32_t)data[1])*360/255;
-    Serial.print("[DEBUG]{BLE} Received t=");
-    Serial.print(singletoninstance->t_ble);
-    Serial.print(" p=");
-    Serial.println(singletoninstance->p_ble);
-  }
+  // TODO: Check when the new flex-pcb has arrived
+  Coordinates led_map_v2[107] = {
+    Coordinates(0.0, 0.0),
+    Coordinates(0.39, 4.97),
+    Coordinates(0.78, 4.97),
+    Coordinates(1.18, 5.08),
+    Coordinates(1.18, 4.87),
+    Coordinates(1.57, 4.89),
+    Coordinates(1.57, 5.06),
+    Coordinates(1.95, 5.04),
+    Coordinates(1.95, 4.91),
+    Coordinates(2.34, 4.97),
+    Coordinates(2.73, 4.97),
+    Coordinates(0.78, 4.45),
+    Coordinates(1.18, 4.55),
+    Coordinates(1.18, 4.35),
+    Coordinates(1.57, 4.37),
+    Coordinates(1.57, 4.53),
+    Coordinates(1.95, 4.51),
+    Coordinates(1.95, 4.39),
+    Coordinates(2.34, 4.45),
+    Coordinates(0.39, 3.93),
+    Coordinates(0.78, 3.93),
+    Coordinates(1.18, 4.03),
+    Coordinates(1.18, 3.82),
+    Coordinates(1.57, 3.84),
+    Coordinates(1.57, 4.01),
+    Coordinates(1.95, 3.99),
+    Coordinates(1.95, 3.87),
+    Coordinates(2.34, 3.93),
+    Coordinates(2.73, 3.93),
+    Coordinates(0.78, 3.4),
+    Coordinates(1.18, 3.3),
+    Coordinates(1.57, 3.32),
+    Coordinates(1.95, 3.34),
+    Coordinates(2.34, 3.4),
+    Coordinates(0.39, 2.88),
+    Coordinates(0.78, 2.88),
+    Coordinates(1.18, 2.98),
+    Coordinates(1.18, 2.78),
+    Coordinates(1.57, 2.8),
+    Coordinates(1.57, 2.96),
+    Coordinates(1.95, 2.94),
+    Coordinates(1.95, 2.82),
+    Coordinates(2.34, 2.88),
+    Coordinates(2.73, 2.88),
+    Coordinates(0.78, 2.36),
+    Coordinates(1.18, 2.46),
+    Coordinates(1.18, 2.25),
+    Coordinates(1.57, 2.27),
+    Coordinates(1.57, 2.44),
+    Coordinates(1.95, 2.42),
+    Coordinates(1.95, 2.29),
+    Coordinates(2.34, 2.36),
+    Coordinates(0.39, 1.83),
+    Coordinates(0.78, 1.83),
+    Coordinates(1.18, 1.93),
+    Coordinates(1.18, 1.73),
+    Coordinates(1.57, 1.75),
+    Coordinates(1.57, 1.92),
+    Coordinates(1.95, 1.89),
+    Coordinates(1.95, 1.77),
+    Coordinates(2.34, 1.83),
+    Coordinates(2.73, 1.83),
+    Coordinates(0.78, 1.31),
+    Coordinates(1.18, 1.41),
+    Coordinates(1.18, 1.21),
+    Coordinates(1.57, 1.23),
+    Coordinates(1.57, 1.39),
+    Coordinates(1.95, 1.37),
+    Coordinates(1.95, 1.25),
+    Coordinates(2.34, 1.31),
+    Coordinates(0.39, 0.79),
+    Coordinates(0.78, 0.79),
+    Coordinates(1.18, 0.89),
+    Coordinates(1.18, 0.68),
+    Coordinates(1.57, 0.7),
+    Coordinates(1.57, 0.87),
+    Coordinates(1.95, 0.85),
+    Coordinates(1.95, 0.72),
+    Coordinates(2.34, 0.79),
+    Coordinates(2.73, 0.79),
+    Coordinates(0.78, 0.26),
+    Coordinates(1.18, 0.36),
+    Coordinates(1.18, 0.16),
+    Coordinates(1.57, 0.18),
+    Coordinates(1.57, 0.35),
+    Coordinates(1.95, 0.32),
+    Coordinates(1.95, 0.2),
+    Coordinates(2.34, 0.26),
+    Coordinates(0.39, 6.02),
+    Coordinates(0.78, 6.02),
+    Coordinates(1.18, 6.12),
+    Coordinates(1.18, 5.92),
+    Coordinates(1.57, 5.94),
+    Coordinates(1.57, 6.1),
+    Coordinates(1.95, 6.08),
+    Coordinates(1.95, 5.96),
+    Coordinates(2.34, 6.02),
+    Coordinates(2.73, 6.02),
+    Coordinates(0.78, 5.5),
+    Coordinates(1.18, 5.6),
+    Coordinates(1.18, 5.4),
+    Coordinates(1.57, 5.41),
+    Coordinates(1.57, 5.58),
+    Coordinates(1.95, 5.56),
+    Coordinates(1.95, 5.44),
+    Coordinates(2.34, 5.5),
+    Coordinates(3.14, 4.97),
+  };
 
-  void startAccelerometer() {
-    // BLE Characteristic IMU xyz accelerometer readout
-    blecharacc.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    blecharacc.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharacc.setUserDescriptor("xyz acceleration");
-    blecharacc.setFixedLen(3*sizeof(float));
-    blecharacc.begin();
-    blecharacc.write(zerobuffer20, 3*sizeof(float));    
-  }
+  class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      Serial.println("BLE: Device connected");
+    }
+    void onDisconnect(BLEServer* pServer) {
+      Serial.println("BLE: Device disconnected");
+    }
+  };
 
-  void begin() {
+  class ColorCharCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      Serial.println("[INFO]{BLE} Received a write on the color characteristic");
+      uint8_t* pData = pCharacteristic->getData();
+      singletoninstance->c_ble =  (pData[2] << 16) | (pData[1] << 8) | pData[0];
+      Serial.print("[DEBUG]{BLE}Qbead received");
+      Serial.println(singletoninstance->c_ble, HEX);
+    }
+  };
+  
+  class ThetaPhiCharCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      Serial.println("[INFO]{BLE} Received a write on the spherical coordinates characteristic");
+      uint8_t* pData = pCharacteristic->getData();
+      singletoninstance->t_ble = ((uint32_t)pData[0])*180/255;
+      singletoninstance->p_ble = ((uint32_t)pData[1])*360/255;
+      Serial.print("[DEBUG]{BLE} Received t=");
+      Serial.print(singletoninstance->t_ble);
+      Serial.print(" p=");
+      Serial.println(singletoninstance->p_ble);
+    }
+  };
+
+  void
+  begin()
+  {
+    Wire.begin(40, 39);
+    Wire.setClock(50000);  // drop to 50kHz
     singletoninstance = this;
-    Serial.begin(9600);
+    Serial.begin(115200);
     for (int waitCount = 0; waitCount < 50; waitCount++)
     {
       if (Serial) {break;}
@@ -504,47 +609,84 @@ public:
     clear();
     setBrightness(10);
 
-    Serial.println("[INFO] Booting... Qbead on XIAO BLE Sense + LSM6DS3 compiled on " __DATE__ " at " __TIME__);
-    if (!imu.begin()) {
-      Serial.println("[DEBUG]{IMU} IMU initialized correctly");
-    } else {
-      Serial.println("[ERROR]{IMU} IMU failed to initialize");
-    }
+    Serial.println("[INFO] Booting... Qbead on XIAO ESP32 compiled on " __DATE__ " at " __TIME__);
 
-    // BLE Peripheral service setup
-    Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
-    Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
-    Bluefruit.Periph.setConnectCallback(connect_callback);
-    bleservice.begin();
+    BLEDevice::init("qbead | " __DATE__ " " __TIME__);
+    // Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
+    // Bluefruit.setName("qbead | " __DATE__ " " __TIME__);
+    // Bluefruit.Periph.setConnectCallback(connect_callback);
+    bleserver = BLEDevice::createServer();
+    bleserver->setCallbacks(new MyServerCallbacks());
+    bleservice = bleserver->createService(QB_UUID_SERVICE);
     // BLE Characteristic Bloch Sphere Visualizer color setup
-    blecharcol.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    blecharcol.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharcol.setUserDescriptor("BSV rgb color");
-    blecharcol.setFixedLen(3);
-    blecharcol.setWriteCallback(ble_callback_color);
-    blecharcol.begin();
-    blecharcol.write(zerobuffer20, 3);
-    // BLE Characteristic Bloch Sphere Visualizer spherical coordinate setup
-    blecharsph.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    blecharsph.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blecharsph.setUserDescriptor("BSV spherical coordinates");
-    blecharsph.setFixedLen(2);
-    blecharsph.setWriteCallback(ble_callback_theta_phi);
-    blecharsph.begin();
-    blecharsph.write(zerobuffer20, 2);
-    // BLE Characteristic IMU xyz gyroscope readout
-    blechargyr.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    blechargyr.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    blechargyr.setUserDescriptor("xyz gyroscope");
-    blechargyr.setFixedLen(3*sizeof(float));
-    blechargyr.begin();
-    blechargyr.write(zerobuffer20, 3*sizeof(float));
-    startBLEadv();
 
-    // Tap detection
-    setupTapInterrupt();
-    pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
-    attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), int1ISR, RISING);
+    uint8_t zerobuffer2[] = {0 ,0};
+    float zerobufferfloat[] = {0.0f, 0.0f, 0.0f};
+    blecharcol = bleservice->createCharacteristic(QB_UUID_COL_CHAR,
+                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+    BLEDescriptor* pColDesc = new BLEDescriptor("2901");
+    pColDesc->setValue("Color Characteristic");
+    blecharcol->addDescriptor(pColDesc);
+    blecharcol->setCallbacks(new ColorCharCallbacks());
+    blecharcol->setValue(zerobuffer20, 3);
+    
+    blecharsph = bleservice->createCharacteristic(QB_UUID_SPH_CHAR,
+                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+    BLEDescriptor* pSphDesc = new BLEDescriptor("2901");
+    pSphDesc->setValue("Theta and Phi Characteristic");
+    blecharsph->addDescriptor(pSphDesc);
+    blecharsph->setCallbacks(new ThetaPhiCharCallbacks());
+    blecharsph->setValue(zerobuffer20, 2);
+
+    blechargyr = bleservice->createCharacteristic(QB_UUID_GYR_CHAR,
+                  BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+    BLEDescriptor* pGyrDesc = new BLEDescriptor("2901");
+    pGyrDesc->setValue("Gyroscope readout Characteristic");
+    blechargyr->addDescriptor(pGyrDesc);
+    blechargyr->addDescriptor(new BLE2902());
+    blechargyr->setValue(zerobuffer20, 3*sizeof(float));
+                  
+    startAccelerometer();
+
+    if (bleservice) {
+      Serial.println("starting service");
+      bleservice->start();
+    } else {
+      Serial.println("Service is null!");
+    }
+    startBLEadv();
+    
+    imuI2C.begin(Wire, QB_IMU_ADDR);
+    imuWE = ICM20948_WE(&Wire, QB_IMU_ADDR);
+    imuWE.setGyrRange(ICM20948_GYRO_RANGE_2000);
+    imuWE.setAccDLPF(ICM20948_DLPF_6);
+    imuWE.setAccRange(ICM20948_ACC_RANGE_8G);
+  }
+
+  void startBLEadv(void)
+  {
+    bleadvertising = bleserver->getAdvertising();
+    bleadvertising->addServiceUUID(QB_UUID_SERVICE);
+    Serial.println("[INFO]{BLE} Start advertising...");
+    // Advertising packet
+    BLEAdvertisementData advertisementData;
+    advertisementData.setName("qbead | " __DATE__ " " __TIME__);
+    advertisementData.setFlags(6); // BLE_SIG_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE = 6
+
+    /* Start Advertising
+    * - Enable auto advertising if disconnected
+    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+    * - Timeout for fast mode is 30 seconds
+    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+    *
+    * For recommended advertising interval
+    * https://developer.apple.com/library/content/qa/qa1931/_index.html
+    */
+    bleadvertising->setAdvertisementData(advertisementData);
+    bleadvertising->setMinInterval(32);
+    bleadvertising->setMaxInterval(244);
+  
+    BLEDevice::startAdvertising();
   }
 
   void clear() {
@@ -623,11 +765,7 @@ public:
 
   void animateTo(uint8_t gate, uint16_t animationLength = 2000)
   {
-    if (frozen)
-    {
-      prevInterruptCount = interruptCount;
-    }
-    else if (gate == 0)
+    if (gate == 0)
     {
       return;
     }
@@ -666,7 +804,7 @@ public:
       {
         return false;
       }
-      if (totalAcceleration > 11)
+      if (totalAcceleration > 3)
       {
         Serial.println("Randomizing");
         float randomTheta = (random(0, 1000)/1000.0f) * PI;
@@ -682,13 +820,51 @@ public:
       }
       return false;
     }
-    if (totalAcceleration > 11)
+    if (totalAcceleration > 3)
     {
       Serial.print("Detected shaking turning on shakingState, acc length: ");
       Serial.println(totalAcceleration);
       shakingState = true;
       T_shaking = millis();
+      waitingForSecondTap = false; // reset double tap detection
     } 
+    return false;
+  }
+
+  bool detectDoubleTap(float acc)
+  {
+    float currentTime = millis();
+
+    // If waiting too long for second tap, reset state
+    if (waitingForSecondTap && (currentTime - lastTapTime > TAP_THRESHOLD_TIME))
+    {
+      waitingForSecondTap = false;
+    }
+
+    // Check for tap condition
+    if (abs(acc) > TAP_THRESHOLD)
+    {
+      // Debounce: ensure enough time since last detected tap
+      if (currentTime - lastDebounceTime > DEBOUNCE_TIME)
+      {
+        lastDebounceTime = currentTime;
+
+        if (waitingForSecondTap)
+        {
+          waitingForSecondTap = false;
+          return true; // Second tap detected within threshold time
+        }
+        else
+        {
+          // First tap detected
+          lastTapTime = currentTime;
+          waitingForSecondTap = true;
+        }
+      } else if (currentTime - lastDebounceTime > 30) {
+        // reset because it was a shake, not a tap
+        waitingForSecondTap = false;
+      }
+    }
     return false;
   }
 
@@ -709,25 +885,23 @@ public:
       frozen = false;
       return 0;
     }
-    // Handle tap interrupt
-    if (interruptCount > prevInterruptCount)
+    // Handle double tap
+    float acc = (gravityVector(2) - oldGravityVector(2)) * 1000000 / dt;
+    Serial.print("acc: ");
+    Serial.println(acc);
+    if (detectDoubleTap(acc))
     {
-      uint8_t tapStatus = 0;
-      myIMU.readRegister(&tapStatus, LSM6DS3_ACC_GYRO_TAP_SRC);
-      prevInterruptCount = interruptCount;
-
-      if (tapStatus & 0x01)
-      {
-        Serial.println("Collapsing");
-        return 8;
-      }
-      else
-      {
-        Serial.println("Executing H gate");
-        return 7;
-      }
+      Serial.println("Collapse detected");
+      return 8; // collapse
     }
-    // Handle shaking
+    float accX = (gravityVector(0) - oldGravityVector(0)) * 1000000 / dt;
+    float accY = (gravityVector(1) - oldGravityVector(1)) * 1000000 / dt;
+    if (detectDoubleTap(accX) || detectDoubleTap(accY))
+    {
+      Serial.println("Hadamard detected");
+      return 7; // Hadamard
+    }
+    // Handle rotating
     for (int i = 0; i < 3; i++)
     {
       if (gyroVector[i] > GYRO_GATE_THRESHOLD)
@@ -746,15 +920,15 @@ public:
     return 0;
   }
 
-  void writeToBLE(BLECharacteristic& destination, Vector3d vector) {
-    float buffer[3] = {(float)vector(0), (float)vector(1), (float)vector(2)};
-    destination.write(buffer, 3 * sizeof(float));
-    for (uint16_t conn_hdl = 0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+  void writeToBLE(BLECharacteristic* destination, Vector3d vector) {
+    float buffer[] = {(float)vector(0), (float)vector(1), (float)vector(2)};
+    if (destination) 
     {
-      if (Bluefruit.connected(conn_hdl) && destination.notifyEnabled(conn_hdl))
-      {
-        destination.notify(buffer, 3 * sizeof(float));
-      }
+      destination->setValue((uint8_t*)buffer, sizeof(buffer));
+      destination->notify();
+    } else
+    {
+      Serial.println("destination is null");
     }
   }
 
@@ -767,27 +941,30 @@ public:
   }
 
   void readIMU(bool print=true) {
-    rbuffer[0] = imu.readFloatAccelX();
-    rbuffer[1] = imu.readFloatAccelY();
-    rbuffer[2] = imu.readFloatAccelZ();    
-    rgyrobuffer[0] = imu.readFloatGyroX();
-    rgyrobuffer[1] = imu.readFloatGyroY();
-    rgyrobuffer[2] = imu.readFloatGyroZ();
+    while (!imuI2C.dataReady()) {
+      delay(1);  // 1-2 ms delay is fine
+    }
+
+    imuI2C.getAGMT();
+    rbuffer[0] = imuI2C.accX() / 1000.0f; // convert to g
+    rbuffer[1] = imuI2C.accY() / 1000.0f;
+    rbuffer[2] = imuI2C.accZ() / 1000.0f;  
+    rgyrobuffer[0] = imuI2C.gyrX();
+    rgyrobuffer[1] = imuI2C.gyrY();
+    rgyrobuffer[2] = imuI2C.gyrZ();
 
     float T_new = micros();
-    float delta = T_new - T_imu;
+    dt = T_new - T_imu;
     T_imu = T_new;
 
     Vector3d newGyro = getVectorFromBuffer(rgyrobuffer) * PI / 180;
-    float d = min(delta / float(T_GYRO), 1.0f);
+    float d = min(dt / float(T_GYRO), 1.0f);
     gyroVector = d * newGyro + (1 - d) * gyroVector; // low pass filter
 
     Vector3d newGravity = getVectorFromBuffer(rbuffer);
-    d = min(delta / float(T_ACC), 1.0f);
+    d = min(dt / float(T_ACC), 1.0f);
+    oldGravityVector = gravityVector;
     gravityVector = d * newGravity + (1 - d) * gravityVector;
-
-    yaw += gravityVector.dot(gyroVector);
-    yaw = fmod(yaw, 2 * PI);
 
     if (print) {
       Serial.print(gravityVector(0));
@@ -802,40 +979,14 @@ public:
       Serial.print("\t");
       Serial.println(gyroVector(2));
     }
-
-    writeToBLE(blecharacc, gravityVector);
-    writeToBLE(blechargyr, gyroVector);
+    
+    if (blecharacc) {
+      writeToBLE(blecharacc, gravityVector);
+    }
+    if (blechargyr) {
+      writeToBLE(blechargyr, gyroVector);
+    }
   }
-
-  void startBLEadv(void)
-  {
-    Serial.println("[INFO]{BLE} Start advertising...");
-    // Advertising packet
-    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-    Bluefruit.Advertising.addTxPower();
-
-    // Include HRM Service UUID
-    Bluefruit.Advertising.addService(bleservice);
-
-    // Secondary Scan Response packet (optional)
-    // Since there is no room for 'Name' in Advertising packet
-    Bluefruit.ScanResponse.addName();
-
-    /* Start Advertising
-    * - Enable auto advertising if disconnected
-    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
-    * - Timeout for fast mode is 30 seconds
-    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
-    *
-    * For recommended advertising interval
-    * https://developer.apple.com/library/content/qa/qa1931/_index.html
-    */
-    Bluefruit.Advertising.restartOnDisconnect(true);
-    Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
-    Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
-  }
-
 }; // end class
 
 Qbead *Qbead::singletoninstance = nullptr;

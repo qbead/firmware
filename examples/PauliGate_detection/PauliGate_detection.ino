@@ -1,6 +1,9 @@
 #include <Qbead.h>
 
 Qbead::Qbead bead;
+int rotationState = 0;
+uint32_t stateColor = color(255, 255, 255);
+const bool toggleAnimationOn = 1;
 
 void setup() {
   bead.begin();
@@ -23,8 +26,26 @@ void setup() {
 }
 
 void loop() {
-  bead.readIMU();
+  bead.readIMU(false);
   bead.clear();
-  bead.setLed(Qbead::Coordinates(bead.gravityVector), color(255, 0, 255), true);
+  bead.showAxis();
+  stateColor = color(255, 255, 255);
+  Serial.print("rotationState: ");
+  Serial.println(rotationState);
+  if (bead.frozen)
+  {
+    stateColor = color(122, 122, 0);
+  }
+  else
+  {
+    rotationState = bead.checkMotion();
+    if (rotationState != 0)
+    {
+      bead.frozen = true;
+      bead.T_freeze = millis();
+    }
+  }
+  bead.animateTo(rotationState, 2000);
+  bead.setLed(bead.visualState, stateColor);
   bead.show();
 }
