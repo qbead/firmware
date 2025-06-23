@@ -38,8 +38,6 @@ void setup()
 void loop()
 {
     bead.readIMU(true);
-    bead.clear();
-    bead.showAxis();
     stateColor = color(255, 255, 255);
     Serial.print("rotationState: ");
     Serial.println(rotationState);
@@ -72,10 +70,17 @@ void loop()
         Qbead::Coordinates newCoordinates(bead.state.getCoordinates().theta(), phi);
         bead.state.setCoordinates(newCoordinates);
         bead.visualState = bead.state.getCoordinates();
-        bead.setLed(oldCoordinates, decoherenceColor);
     }
     t = millis();
     bead.animateTo(rotationState, 2000);
-    bead.setLed(bead.visualState, stateColor, 1);
-    bead.show();
+    if (bead.T_led + 20 < millis()) {
+        bead.T_led = millis();
+        bead.clear();
+        if (!bead.frozen) {
+            bead.setLed(oldCoordinates, decoherenceColor);
+        }
+        bead.showAxis();
+        bead.setLed(bead.visualState, stateColor, 1);
+        bead.show();
+    }
 }

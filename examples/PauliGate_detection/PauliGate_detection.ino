@@ -17,7 +17,6 @@ void setup() {
   Serial.println("testing smooth transition between pixels");
   for (int phi = 0; phi < 360; phi += 30) {
     for (int theta = 0; theta < 180; theta += 3) {
-      bead.clear();
       bead.setBloch_deg(theta, phi, colorWheel_deg(phi));
       bead.show();
     }
@@ -27,8 +26,6 @@ void setup() {
 
 void loop() {
   bead.readIMU(false);
-  bead.clear();
-  bead.showAxis();
   stateColor = color(255, 255, 255);
   Serial.print("rotationState: ");
   Serial.println(rotationState);
@@ -46,6 +43,12 @@ void loop() {
     }
   }
   bead.animateTo(rotationState, 2000);
-  bead.setLed(bead.visualState, stateColor);
-  bead.show();
+  // The leds can only be updated every 20ms
+  if (bead.T_led + 20 < millis()) {
+    bead.T_led = millis();
+    bead.clear();
+    bead.showAxis();
+    bead.setLed(bead.visualState, stateColor);
+    bead.show();
+  }
 }

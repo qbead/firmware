@@ -357,6 +357,7 @@ public:
   float T_imu;             // last update from the IMU
   float T_freeze = 0;
   float T_shaking = 0;
+  float T_led = 0; // last update to the LEDs
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble;
   bool frozen = false; // frozen means that there is an animation in progress
@@ -606,6 +607,7 @@ public:
     }
 
     pixels.begin();
+    T_led = millis();
     clear();
     setBrightness(10);
 

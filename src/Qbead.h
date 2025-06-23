@@ -386,6 +386,7 @@ public:
   float T_imu;             // last update from the IMU
   float T_freeze = 0;
   float T_shaking = 0;
+  float T_led = 0; // last update to the LEDs
   bool frozen = false; // frozen means that there is an animation in progress
   bool shakingState = false; // if ShakingState is 1 detected shaking and if shaking keeps happening randomising state
   QuantumState state = QuantumState(Coordinates(-0.866, 0.25, -0.433));
@@ -393,6 +394,7 @@ public:
   Vector3d gravityVector = Vector3d(0, 0, 1);
   Vector3d gyroVector = Vector3d(0, 0, 1);
   float yaw = 0;
+  float dt  = 0; // time difference between the last two IMU updates
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
@@ -501,6 +503,7 @@ public:
     }
 
     pixels.begin();
+    T_led = millis();
     clear();
     setBrightness(10);
 
@@ -775,15 +778,15 @@ public:
     rgyrobuffer[2] = imu.readFloatGyroZ();
 
     float T_new = micros();
-    float delta = T_new - T_imu;
+    dt = T_new - T_imu;
     T_imu = T_new;
 
     Vector3d newGyro = getVectorFromBuffer(rgyrobuffer) * PI / 180;
-    float d = min(delta / float(T_GYRO), 1.0f);
+    float d = min(dt / float(T_GYRO), 1.0f);
     gyroVector = d * newGyro + (1 - d) * gyroVector; // low pass filter
 
     Vector3d newGravity = getVectorFromBuffer(rbuffer);
-    d = min(delta / float(T_ACC), 1.0f);
+    d = min(dt / float(T_ACC), 1.0f);
     gravityVector = d * newGravity + (1 - d) * gravityVector;
 
     yaw += gravityVector.dot(gyroVector);
