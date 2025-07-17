@@ -10,17 +10,18 @@
 #include <bluefruit.h>
 
 // default configs
-#define QB_LEDPIN 0
+// TODO make them ifndef
+#define QB_LEDPIN 10
 #define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
 #define QB_NSECTIONS 6
 #define QB_NLEGS 12
 #define QB_IMU_ADDR 0x6A
-#define QB_IX 0
-#define QB_IY 2
+#define QB_IX 2
+#define QB_IY 0
 #define QB_IZ 1
 #define QB_SX 0
 #define QB_SY 0
-#define QB_SZ 1
+#define QB_SZ 0
 
 #define QB_MAX_PRPH_CONNECTION 2
 
@@ -32,6 +33,8 @@ const uint8_t QB_UUID_SPH_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+2,0x1f,0x0c,0xe3};
 const uint8_t QB_UUID_ACC_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+3,0x1f,0x0c,0xe3};
+const uint8_t QB_UUID_TAP_CHAR[] =
+{0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
 
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
@@ -135,7 +138,8 @@ public:
         bleservice(QB_UUID_SERVICE),
         blecharcol(QB_UUID_COL_CHAR),
         blecharsph(QB_UUID_SPH_CHAR),
-        blecharacc(QB_UUID_ACC_CHAR)
+        blecharacc(QB_UUID_ACC_CHAR),
+        blechartap(QB_UUID_TAP_CHAR)
         {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
@@ -147,6 +151,7 @@ public:
   BLECharacteristic blecharcol;
   BLECharacteristic blecharsph;
   BLECharacteristic blecharacc;
+  BLECharacteristic blechartap;
   uint8_t connection_count = 0;
 
   const uint8_t nsections;
@@ -158,7 +163,11 @@ public:
   float rbuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float t_acc, p_acc;        // theta and phi according to gravity
-  float T_imu;             // last update from the IMU
+  float T_imu;               // last update from the IMU
+
+  unsigned long last_tap = 0;
+  const unsigned long tap_debounce = 1000;
+  const float tap_threshold = 0.9;
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
@@ -224,6 +233,13 @@ public:
     blecharacc.setFixedLen(3*sizeof(float));
     blecharacc.begin();
     blecharacc.write(zerobuffer20, 3*sizeof(float));
+    // BLE Characteristic IMU xyz tap detection
+    blechartap.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blechartap.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blechartap.setUserDescriptor("xyz tap detection");
+    blechartap.setFixedLen(3*sizeof(float));
+    blechartap.begin();
+    blechartap.write(zerobuffer20, 3*sizeof(float));
     startBLEadv();
   }
 
@@ -298,6 +314,8 @@ public:
     ry = (1-2*sy)*rbuffer[iy];
     rz = (1-2*sz)*rbuffer[iz];
 
+    float rawmag2 = rx*rx+ry*ry+rz*rz;
+
     float T_new = micros();
     float delta = T_new - T_imu;
     T_imu = T_new;
@@ -312,6 +330,7 @@ public:
       y = d*ry+(1-d)*y;
       z = d*rz+(1-d)*z;
     }
+    float mag2 = x*x+y*y+z*z;
 
     t_acc = theta(x, y, z)*180/3.14159;
     p_acc = phi(x, y)*180/3.14159;
@@ -323,6 +342,10 @@ public:
       Serial.print(y);
       Serial.print("\t");
       Serial.print(z);
+      Serial.print("\t");
+      Serial.print(mag2);
+      Serial.print("\t");
+      Serial.print(rawmag2);
       Serial.print("\t-1\t1\t");
       Serial.print(t_acc);
       Serial.print("\t");
@@ -335,11 +358,21 @@ public:
     rbuffer[1] = y;
     rbuffer[2] = z;
     blecharacc.write(rbuffer, 3*sizeof(float));
+
+    bool a_tap = abs(rawmag2-1) > tap_threshold && millis()-last_tap>tap_debounce;
+
+    if (a_tap)
+    {
+      last_tap = millis();
+      blecharacc.write(rbuffer, 3*sizeof(float));
+    }
+
     for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
     {
       if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
       {
         blecharacc.notify(rbuffer, 3*sizeof(float));
+        a_tap && blechartap.notify(rbuffer, 3*sizeof(float));
       }
     }
   }
