@@ -39,8 +39,9 @@ const uint8_t QB_UUID_TAP_CHAR[] =
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
 // TODO manage namespaces better
+// Colors are ordered RBG
 static uint32_t color(uint8_t r, uint8_t g, uint8_t b) {
-  return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+  return ((uint32_t)r << 16) | ((uint32_t)b << 8) | g;
 }
 
 static uint8_t redch(uint32_t rgb) {
@@ -48,11 +49,11 @@ static uint8_t redch(uint32_t rgb) {
 }
 
 static uint8_t greench(uint32_t rgb) {
-  return (0x00ff00 & rgb) >> 8;
+  return 0x0000ff & rgb;
 }
 
 static uint8_t bluech(uint32_t rgb) {
-  return 0x0000ff & rgb;
+  return (0x00ff00 & rgb) >> 8;
 }
 
 uint32_t colorWheel(uint8_t wheelPos) {
@@ -302,8 +303,8 @@ public:
     uint8_t bc = bluech(c);
     uint8_t gc = greench(c);
 
-    setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
-    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
+    setLegPixelColor(phi_int, theta_int, color(q * rc, q * gc, q * bc));
+    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * gc, p * bc));
   }
 
   void readIMU(bool print=true) {
