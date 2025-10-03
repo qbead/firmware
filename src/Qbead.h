@@ -55,6 +55,14 @@ static uint8_t bluech(uint32_t rgb) {
   return 0x0000ff & rgb;
 }
 
+static uint32_t mul_color(float a, uint32_t c) {
+  uint8_t r = min(0xff, a * redch(c));
+  uint8_t g = min(0xff, a * greench(c));
+  uint8_t b = min(0xff, a * bluech(c));
+  
+  return color(r, g, b);
+}
+
 uint32_t colorWheel(uint8_t wheelPos) {
   wheelPos = 255 - wheelPos;
   if (wheelPos < 85) {
@@ -305,6 +313,41 @@ public:
     setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
     setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
   }
+
+void setBloch_deg_double_smooth(float theta, float phi, uint32_t c) {
+  if (!checkThetaAndPhi(theta, phi)) return;
+  
+  int theta_int = theta / theta_quant;
+  int phi_int = phi / phi_quant;
+
+  float t1 = theta / theta_quant - theta_int;
+  float t0 = 1 - t1;
+  float p1 = phi / phi_quant - phi_int;
+  float p0 = 1 - p1;
+
+  float tp00 = t0*t0 * p0*p0;
+  float tp01 = t0*t0 * p1*p1;
+  float tp10 = t1*t1 * p0*p0;
+  float tp11 = t1*t1 * p1*p1;
+  
+  // Check if position is either close to low-theta pole or at high-theta pole, and only color this pixel once independent of phi
+  if (theta_int == 0 || theta_int == nsections){  
+    setLegPixelColor(phi_int, theta_int, mul_color(t0*t0, c));
+  }
+  else {
+    setLegPixelColor(phi_int, theta_int, mul_color(tp00, c));
+    setLegPixelColor(phi_int + 1, theta_int, mul_color(tp01, c));
+  }
+
+  // Check if position is close to high-theta pole, and only color this pixel once independent of phi
+  if (theta_int == nsections - 1){ 
+    setLegPixelColor(phi_int, theta_int + 1, mul_color(t1*t1, c));
+  }
+  else if (theta_int < nsections - 1){
+    setLegPixelColor(phi_int, theta_int + 1, mul_color(tp10, c));
+    setLegPixelColor(phi_int + 1, theta_int + 1, mul_color(tp11, c));
+  }
+}
 
   void readIMU(bool print=true) {
     rbuffer[0] = imu.readFloatAccelX();
