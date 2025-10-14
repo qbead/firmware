@@ -55,6 +55,22 @@ static uint8_t bluech(uint32_t rgb) {
   return 0x0000ff & rgb;
 }
 
+static uint32_t add_color(uint32_t c0, uint32_t c1) {
+  uint8_t r = min(0xff, (int)redch(c0) + redch(c1));
+  uint8_t g = min(0xff, (int)greench(c0) + greench(c1));
+  uint8_t b = min(0xff, (int)bluech(c0) + bluech(c1));
+  
+  return color(r, g, b);
+}
+
+static uint32_t mul_color(float a, uint32_t c) {
+  uint8_t r = min(0xff, a * redch(c));
+  uint8_t g = min(0xff, a * greench(c));
+  uint8_t b = min(0xff, a * bluech(c));
+  
+  return color(r, g, b);
+}
+
 uint32_t colorWheel(uint8_t wheelPos) {
   wheelPos = 255 - wheelPos;
   if (wheelPos < 85) {
@@ -265,8 +281,41 @@ public:
     }
   }
 
+  uint32_t getLegPixelColor(int leg, int pixel) {
+    leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
+    leg = leg % nlegs;
+    if (leg == 0) {
+      return pixels.getPixelColor(pixel);
+    } 
+    if (pixel == 0) {
+      return pixels.getPixelColor(0);
+    } 
+    if (pixel == 6) {
+      return pixels.getPixelColor(6);
+    } 
+    return pixels.getPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1);
+  }
+
+  void addLegPixelColor(int leg, int pixel, uint32_t c0) {
+    uint32_t c1 = getLegPixelColor(leg, pixel);
+    setLegPixelColor(leg, pixel, add_color(c0, c1));
+  }
+
   void setBrightness(uint8_t b) {
     pixels.setBrightness(b);
+  }
+
+  float central_angle_rad(float phi1, float theta1, float phi2, float theta2){
+    return acos(cos(theta1) * cos(theta2) + sin(theta1) * sin(theta2) * cos(phi1 - phi2));
+  }
+
+  float central_angle_deg(float phi1, float theta1, float phi2, float theta2){
+    float conversion_factor = 3.1415927 / 180;
+    phi1 *= conversion_factor;
+    theta1 *= conversion_factor;
+    phi2 *= conversion_factor;
+    theta2 *= conversion_factor;
+    return central_angle_rad(phi1, theta1, phi2, theta2) / conversion_factor;
   }
 
   void setBloch_deg(float theta, float phi, uint32_t color) {
@@ -304,6 +353,30 @@ public:
 
     setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
     setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
+  }
+
+  void setBloch_deg_double_smooth(float theta, float phi, uint32_t c, bool isAdded = 0) {
+    if (!checkThetaAndPhi(theta, phi)) return;
+    float width = 20;
+  
+    for (int phi_pixel = 0; phi_pixel <= 12; ++phi_pixel){
+      for (int theta_pixel = 0; theta_pixel <= 6; ++theta_pixel){
+        float internal_angle = central_angle_deg(phi, theta, 30 * phi_pixel, 30 * theta_pixel);
+  
+        if (internal_angle > 30){
+          continue;
+        }
+        
+        float brightness = 1 - internal_angle * internal_angle / (width * width);
+  
+        if (isAdded){
+          addLegPixelColor(phi1, theta1, mul_color(brightness, c));
+        }
+        else {
+          setLegPixelColor(phi1, theta1, mul_color(brightness, c));
+        }
+      }
+    }
   }
 
   void readIMU(bool print=true) {
