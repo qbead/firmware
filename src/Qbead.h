@@ -12,7 +12,7 @@
 // default configs
 // TODO make them ifndef
 #define QB_LEDPIN 10
-#define QB_PIXELCONFIG NEO_BRG + NEO_KHZ800
+#define QB_PIXELCONFIG NEO_GRB + NEO_KHZ800
 #define QB_NSECTIONS 6
 #define QB_NLEGS 12
 #define QB_IMU_ADDR 0x6A
@@ -55,6 +55,22 @@ static uint8_t bluech(uint32_t rgb) {
   return 0x0000ff & rgb;
 }
 
+static uint32_t addColor(uint32_t c0, uint32_t c1) {
+  uint8_t r = min(0xff, (int)redch(c0) + redch(c1));
+  uint8_t g = min(0xff, (int)greench(c0) + greench(c1));
+  uint8_t b = min(0xff, (int)bluech(c0) + bluech(c1));
+  
+  return color(r, g, b);
+}
+
+static uint32_t mulColor(float a, uint32_t c) {
+  uint8_t r = min(0xff, a * redch(c));
+  uint8_t g = min(0xff, a * greench(c));
+  uint8_t b = min(0xff, a * bluech(c));
+  
+  return color(r, g, b);
+}
+
 uint32_t colorWheel(uint8_t wheelPos) {
   wheelPos = 255 - wheelPos;
   if (wheelPos < 85) {
@@ -77,23 +93,109 @@ float sign(float x) {
   else return -1;
 }
 
-// z = cos(t)
-// x = cos(p)sin(t)
-// y = sin(p)sin(t)
-// Return the angle in radians between the x-axis and the line to the point (x, y)
-float phi(float x, float y) {
-  return atan2(y, x);
+static float toRadians(const float angle) {
+  return angle / 180 * M_PI;
 }
 
-float phi(float x, float y, float z) {
-  return phi(x, y);
+static float toDegrees(const float angle) {
+  return angle * 180 / M_PI;
 }
 
-float theta(float x, float y, float z) {
-  float ll = x * x + y * y + z * z;
-  float l = sqrt(ll);
-  float theta = acos(z / l);
-  return theta;
+static float sin_deg(const float angle) {
+  return sin(toRadians(angle));
+}
+
+static float cos_deg(const float angle) {
+  return cos(toRadians(angle));
+}
+
+// Mod function that only returns positive numbers
+static float modulo(const float a, const float b) {
+  return fmod(a, b) + (a < 0) * b;
+}
+
+class BlochVector
+{
+  float theta; //Degrees
+  float phi; //Degrees
+  float x;
+  float y;
+  float z;
+
+public:
+  BlochVector() : theta(0), phi(0), x(0), y(0), z(1) {}
+
+  BlochVector(const float theta_in, const float phi_in) {
+    const float theta_mod360 = modulo(theta_in, 360);
+    theta = (theta_mod360 < 180) ? theta_mod360 : 360 - theta_mod360;
+    phi = modulo(phi_in + (theta_mod360 > 180) * 180, 360);
+    x = cos_deg(phi_in) * sin_deg(theta_in); 
+    y = sin_deg(phi_in) * sin_deg(theta_in); 
+    z = cos_deg(theta_in);
+  }
+
+  BlochVector(const float x_in, const float y_in, const float z_in) {
+    theta = toDegrees(atan2(sqrt(x_in*x_in + y_in*y_in), z_in));
+    phi = modulo(toDegrees(atan2(y_in, x_in)), 360);
+    const float r = sqrt(x_in*x_in + y_in*y_in + z_in*z_in);
+    x = x_in / r; 
+    y = y_in / r; 
+    z = z_in / r;
+  }
+  
+  BlochVector& operator=(const BlochVector& other) {
+    theta = other.getTheta();
+    phi = other.getPhi();
+    x = other.getX();
+    y = other.getY();
+    z = other.getZ();
+    return *this;
+  }
+
+  BlochVector rotatedAround(const BlochVector& axis, const float angle) const {
+    const float axis_x = axis.getX();
+    const float axis_y = axis.getY();
+    const float axis_z = axis.getZ();
+    const float dot_product = x * axis_x + y * axis_y + z * axis_z;
+    const float new_x = x*cos_deg(angle) + (axis_y*z - axis_z*y)*sin_deg(angle) + axis_x*dot_product*(1-cos_deg(angle));
+    const float new_y = y*cos_deg(angle) + (axis_z*x - axis_x*z)*sin_deg(angle) + axis_y*dot_product*(1-cos_deg(angle));
+    const float new_z = z*cos_deg(angle) + (axis_x*y - axis_y*x)*sin_deg(angle) + axis_z*dot_product*(1-cos_deg(angle));
+
+    BlochVector result(new_x, new_y, new_z);
+    return result;
+  }
+  
+  BlochVector& rotateAround(const BlochVector& axis, const float angle) {
+    *this = this->rotatedAround(axis, angle);
+    return *this;
+  } 
+
+  float centralAngle(const BlochVector& other) const {
+    return toDegrees(acos(cos_deg(theta) * cos_deg(other.getTheta()) 
+                        + sin_deg(theta) * sin_deg(other.getTheta()) * cos_deg(phi - other.getPhi())));
+  }
+
+  float getTheta() const {return theta;}
+  float getTheta_rad() const {return theta * M_PI / 180;}
+  float getPhi() const {return phi;}
+  float getPhi_rad() const {return phi * M_PI / 180;}
+  float getX() const {return x;}
+  float getY() const {return y;}
+  float getZ() const {return z;}
+
+  void setXYZ(const float x, const float y, const float z){
+    BlochVector new_vector(x, y, z);
+    *this = new_vector;
+  }
+
+  void setAngles(const float theta, const float phi){
+    BlochVector new_vector(theta, phi);
+    *this = new_vector;
+  }
+};
+
+float centralAngle(const BlochVector& v, const BlochVector& u) {
+  return v.centralAngle(u);
 }
 
 bool checkThetaAndPhi(float theta, float phi) {
@@ -162,7 +264,7 @@ public:
   const bool sx, sy, sz;
   float rbuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
-  float t_acc, p_acc;        // theta and phi according to gravity
+  BlochVector angle_acc;     // theta and phi according to gravity
   float T_imu;               // last update from the IMU
 
   unsigned long last_tap = 0;
@@ -265,12 +367,33 @@ public:
     }
   }
 
+  uint32_t getLegPixelColor(int leg, int pixel) {
+    leg = nlegs - leg; // invert direction for the phi angle, because the PCB is set up as a left-handed coordinate system
+    leg = leg % nlegs;
+    if (leg == 0) {
+      return pixels.getPixelColor(pixel);
+    } 
+    if (pixel == 0) {
+      return pixels.getPixelColor(0);
+    } 
+    if (pixel == 6) {
+      return pixels.getPixelColor(6);
+    } 
+    return pixels.getPixelColor(7 + (leg - 1) * (nsections - 1) + pixel - 1);
+  }
+
+  void addLegPixelColor(int leg, int pixel, uint32_t c0) {
+    uint32_t c1 = getLegPixelColor(leg, pixel);
+    setLegPixelColor(leg, pixel, addColor(c0, c1));
+  }
+
   void setBrightness(uint8_t b) {
     pixels.setBrightness(b);
   }
 
-  void setBloch_deg(float theta, float phi, uint32_t color) {
-    if (!checkThetaAndPhi(theta, phi)) return;
+  void setBloch_deg(BlochVector& state, uint32_t color) {
+    float theta = state.getTheta();
+    float phi = state.getPhi();
     float theta_section = theta / theta_quant;
     if (theta_section < 0.5) {
       setLegPixelColor(0, 0, color);
@@ -284,26 +407,21 @@ public:
     }
   }
 
-  void setBloch_deg_smooth(float theta, float phi, uint32_t c) {
-    if (!checkThetaAndPhi(theta, phi)) return;
-    float theta_section = theta / theta_quant;
-    int theta_int = min(nsections - 1, round(theta_section)); // to avoid precision issues near the end of the range
-    int phi_int = round(phi / phi_quant);
-    phi_int = phi_int > nlegs - 1 ? 0 : phi_int;
+  void setBloch_deg_smooth(BlochVector& state, uint32_t color) {
+    float width = 20;
 
-    float p = (theta_section - theta_int);
-    int theta_direction = sign(p);
-    p = abs(p);
-    float q = 1 - p;
-    p = p * p;
-    q = q * q;
+    for (int phi_pixel = 0; phi_pixel <= nlegs; ++phi_pixel) {
+      for (int theta_pixel = 0; theta_pixel <= nsections; ++theta_pixel) {
+        float internal_angle = state.centralAngle(BlochVector(theta_quant * theta_pixel, phi_quant * phi_pixel));
+        if (internal_angle > width) {
+          continue;
+        }
 
-    uint8_t rc = redch(c);
-    uint8_t bc = bluech(c);
-    uint8_t gc = greench(c);
+        float brightness = 1 - internal_angle * internal_angle / (width * width);
 
-    setLegPixelColor(phi_int, theta_int, color(q * rc, q * bc, q * gc));
-    setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * bc, p * gc));
+        addLegPixelColor(phi_pixel, theta_pixel, mulColor(brightness, color));
+      }
+    }
   }
 
   void readIMU(bool print=true) {
@@ -331,10 +449,8 @@ public:
       z = d*rz+(1-d)*z;
     }
     float mag2 = x*x+y*y+z*z;
-
-    t_acc = theta(x, y, z)*180/3.14159;
-    p_acc = phi(x, y)*180/3.14159;
-    if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
+    
+    angle_acc.setXYZ(x, y, z); 
 
     if (print) {
       Serial.print(x);
@@ -347,9 +463,9 @@ public:
       Serial.print("\t");
       Serial.print(rawmag2);
       Serial.print("\t-1\t1\t");
-      Serial.print(t_acc);
+      Serial.print(angle_acc.getTheta());
       Serial.print("\t");
-      Serial.print(p_acc);
+      Serial.print(angle_acc.getPhi());
       Serial.print("\t-360\t360\t");
       Serial.println();
     }
