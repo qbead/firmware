@@ -1,6 +1,6 @@
-// #include <Qbead.h>
 #include <Qbead.h>
 
+// The header file for the first lesson.
 
 Qbead::Qbead bead;
 
