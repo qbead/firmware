@@ -1,6 +1,8 @@
-#include <Qbead.h>
+/// The header file for the first lesson. This contains helper functions perform such
+/// computations as dot/cross products, gyroscope calibration, colour calculation
+/// (for dynamical decoupling experiments), etc.
 
-// The header file for the first lesson.
+#include <Qbead.h>
 
 Qbead::Qbead bead;
 
