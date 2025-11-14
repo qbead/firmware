@@ -1,3 +1,4 @@
+/// # Lesson 1 - Helper Functions.
 /// The header file for the first lesson. This contains helper functions perform such
 /// computations as dot/cross products, gyroscope calibration, colour calculation
 /// (for dynamical decoupling experiments), etc.
