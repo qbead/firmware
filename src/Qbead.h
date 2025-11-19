@@ -266,6 +266,7 @@ public:
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   BlochVector angle_acc;     // theta and phi according to gravity
   float T_imu;               // last update from the IMU
+  float d;
 
   unsigned long last_tap = 0;
   const unsigned long tap_debounce = 1000;
@@ -408,7 +409,7 @@ public:
   }
 
   void setBloch_deg_smooth(BlochVector& state, uint32_t color) {
-    float width = 20;
+    float width = 13;
 
     for (int phi_pixel = 0; phi_pixel <= nlegs; ++phi_pixel) {
       for (int theta_pixel = 0; theta_pixel <= nsections; ++theta_pixel) {
@@ -439,11 +440,12 @@ public:
     T_imu = T_new;
     const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
     if (delta > 100000) {
+      d = 1;
       x = rx;
       y = ry;
       z = rz;
     } else {
-      float d = delta/T;
+      d = delta/T;
       x = d*rx+(1-d)*x;
       y = d*ry+(1-d)*y;
       z = d*rz+(1-d)*z;
