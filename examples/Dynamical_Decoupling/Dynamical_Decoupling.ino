@@ -1,12 +1,21 @@
+// # Dynamical Decoupling
+//
+// This example demonstrates the dynamical decoupling of a quantum state.
+// The user is presented with a target state and a current state.
+// The current state is a quantum state that is subject to decoherence.
+// The target state is fixed.
+// The goal of the "game" is to not let the current state deviate too much from the target state.
+//
+// The current state experiences decoherence (i.e. it is rotated around a fixed laboratory frame).
+// The method of "dynamical decoupling" is used to combat the decoherence by frequently changing the axis of decoherence.
+//
+// The user can tap the Qbead to reset the current state to the target state.
+
+
+// First, let's include the Qbead library and set up a few useful data structures.
 #include <Qbead.h>
 
 Qbead::Qbead bead;
-
-void setup() {
-  bead.begin();
-  bead.setBrightness(25);
-  bead.testPixels();
-}
 
 BlochVector current_state(90, 0);
 BlochVector target_state(90, 0);
@@ -15,8 +24,25 @@ BlochVector target_state(90, 0);
 uint32_t purple = color(255, 0, 255);
 uint32_t white = color(255, 255, 255);
 
+// ## Setup
+//
+// The setup function is called once when the Qbead is powered on and it is used to initialize the Qbead and set up the game.
+void setup() {
+  bead.begin();
+  bead.setBrightness(25);
+  // Test the pixels by flashing a colorful pattern to make sure they are working.
+  bead.testPixels();
+}
+
+// ## Event loop
+//
+// The loop function is called repeatedly until the Qbead is powered off.
+// It is used to read the IMU and update the current state of the game.
 void loop() {
+  // Read the IMU and compute the direction of gravity and whether a tap has been detected.
   bead.readIMU();
+
+  // Clear the display.
   bead.clear();
 
   // ### Draw the "reference" state -- the one corresponding to no decoherence.
