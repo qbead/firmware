@@ -69,6 +69,13 @@ static uint32_t scaleColor(float a, uint32_t c) {
   return color(r, g, b);
 }
 
+static uint32_t scaleColor_8bit(uint8_t a, uint32_t c) {
+  uint8_t r = min(0xff, (int)a * redch(c) / 255);
+  uint8_t g = min(0xff, (int)a * greench(c) / 255);
+  uint8_t b = min(0xff, (int)a * bluech(c) / 255);
+  return color(r, g, b);
+}
+
 uint32_t colorWheel(uint8_t wheelPos) {
   wheelPos = 255 - wheelPos;
   if (wheelPos < 85) {
@@ -80,6 +87,17 @@ uint32_t colorWheel(uint8_t wheelPos) {
   }
   wheelPos -= 170;
   return color(wheelPos * 3, 255 - wheelPos * 3, 0);
+}
+
+// #### Parabolic wave
+// Similarly to the triangular wave, this function is useful for periodically
+// pulsating patterns. However, the profile of this function resembles a beating
+// heart more closely and it can provide for more pleasing visuals.
+// ![Depiction of the parabolic wave.](./parabola_wave.png)
+uint8_t parabolaWave(uint8_t x) {
+  uint8_t xm = x;
+  if (xm>0x7f) {xm = 0xff-xm;}
+  return (xm*xm)>>6;
 }
 
 uint32_t colorWheel_deg(float wheelPos) {
@@ -276,9 +294,10 @@ public:
   float t_acc, p_acc;        // theta and phi according to gravity
   float T_imu;               // last update from the IMU
 
+  bool tapped = false;
   unsigned long last_tap = 0;
   const unsigned long tap_debounce = 1000;
-  const float tap_threshold = 0.9;
+  const float tap_threshold = 40.0;
 
   float t_ble, p_ble; // theta and phi as sent over BLE connection
   uint32_t c_ble = 0xffffff; // color as sent over BLE connection
@@ -471,6 +490,23 @@ public:
     setLegPixelColor(phi_int, theta_int + theta_direction, color(p * rc, p * gc, p * bc));
   }
 
+  void testPixels() {
+    Serial.println("[INFO] Testing all pixels discretely");
+    for (int i = 0; i < pixels.numPixels(); i++) {
+      pixels.setPixelColor(i, color(255, 255, 255));
+      pixels.show();
+      delay(5);
+    }
+    Serial.println("[INFO] Testing smooth transition between pixels");
+    for (int phi = 0; phi < 360; phi += 30) {
+      for (int theta = 0; theta < 180; theta += 6) {
+        clear();
+        setBloch_deg_smooth(theta, phi, colorWheel_deg(phi));
+        show();
+      }
+    }
+  }
+
   void readIMU(bool print=true) {
     rbuffer[0] = imu.readFloatAccelX();
     rbuffer[1] = imu.readFloatAccelY();
@@ -502,6 +538,8 @@ public:
     if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
 
     if (print) {
+      Serial.print(tapped);
+      Serial.print("\t");
       Serial.print(x);
       Serial.print("\t");
       Serial.print(y);
@@ -524,9 +562,9 @@ public:
     rbuffer[2] = z;
     blecharacc.write(rbuffer, 3*sizeof(float));
 
-    bool a_tap = abs(rawmag2-1) > tap_threshold && millis()-last_tap>tap_debounce;
+    tapped = abs(rawmag2-1) > tap_threshold && millis()-last_tap>tap_debounce;
 
-    if (a_tap)
+    if (tapped)
     {
       last_tap = millis();
       blecharacc.write(rbuffer, 3*sizeof(float));
@@ -537,7 +575,7 @@ public:
       if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
       {
         blecharacc.notify(rbuffer, 3*sizeof(float));
-        a_tap && blechartap.notify(rbuffer, 3*sizeof(float));
+        tapped && blechartap.notify(rbuffer, 3*sizeof(float));
       }
     }
   }
