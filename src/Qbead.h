@@ -185,6 +185,10 @@ public:
     return *this;
   }
 
+  BlochVector operator-() const {
+    return BlochVector(-x, -y, -z);
+  }
+
   BlochVector rotatedAround(const BlochVector& axis, const float angle) const {
     const float axis_x = axis.x;
     const float axis_y = axis.y;
@@ -203,11 +207,17 @@ public:
     return *this;
   }
 
-  float centralAngle(const BlochVector& other) const {
+  float centralAngle(const BlochVector& other) const { // TODO this is quite suboptimal
     return toDegrees(acos(
       cos_deg(theta) * cos_deg(other.theta)
     + sin_deg(theta) * sin_deg(other.theta) * cos_deg(phi - other.phi))
     );
+  }
+
+  float innerProductAbs(const BlochVector& other) const { // TODO this is quite suboptimal
+    float angle = centralAngle(other);
+    float cosval = cos_deg(angle / 2.0f);
+    return cosval;
   }
 
   void setXYZ(const float x, const float y, const float z){
@@ -225,6 +235,9 @@ float centralAngle(const BlochVector& v, const BlochVector& u) {
   return v.centralAngle(u);
 }
 
+float innerProductAbs(const BlochVector& v, const BlochVector& u) {
+  return v.innerProductAbs(u);
+}
 bool checkThetaAndPhi(float theta, float phi) {
   return theta >= 0 && theta <= 180 && phi >= 0 && phi <= 360;
 }
