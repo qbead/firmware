@@ -6,8 +6,10 @@
 #include <Adafruit_NeoPixel.h>
 #include <LSM6DS3.h>
 #include <math.h>
-
+#include <ArduinoEigen.h>
 #include <bluefruit.h>
+
+using namespace Eigen;
 
 // default configs
 // TODO make them ifndef
@@ -37,6 +39,7 @@ const uint8_t QB_UUID_TAP_CHAR[] =
 {0x45,0x8d,0x08,0xaa,0xd6,0x63,0x44,0x25,0xbe,0x12,0x9c,0x35,0xc6+4,0x1f,0x0c,0xe3};
 
 const uint8_t zerobuffer20[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+const std::complex<float> i(0, 1);
 
 // TODO manage namespaces better
 static uint32_t color(uint8_t r, uint8_t g, uint8_t b) {
@@ -254,7 +257,225 @@ void connect_callback(uint16_t conn_handle)
   Serial.println(central_name);
 }
 
+// In rads
+void sphericalToCartesian(float theta, float phi, float& x, float& y, float& z)
+{
+  // Normalize yaw to be between 0 and 2*PI
+  phi = fmod(phi, 2 * PI);
+  if (phi < 0)
+  {
+    phi += 2 * PI;
+  }
+  if (!checkThetaAndPhi(theta * 180 / PI, phi * 180 / PI))
+  {
+    Serial.print("Theta or Phi out of range when creating coordinates class, initializing as 1");
+    Serial.print("Theta: ");
+    Serial.print(theta);
+    Serial.print("Phi: ");
+    Serial.println(phi);
+    x = 0;
+    y = 0;
+    z = 1;
+    return;
+  }
+
+  x = sin(theta) * cos(phi);
+  y = sin(theta) * sin(phi);
+  z = cos(theta);
+}
+
 namespace Qbead {
+
+class Coordinates
+{
+public:
+  Vector3d v;
+
+  Coordinates(float argx, float argy, float argz)
+  {
+    v = Vector3d(argx, argy, argz);
+    v.normalize();
+  }
+
+  // In rads
+  Coordinates(float theta, float phi)
+  {
+    float x, y, z = 0;
+    sphericalToCartesian(theta, phi, x, y, z);
+    v = Vector3d(x, y, z);
+  }
+
+  Coordinates(Vector3d vector)
+  {
+    v = vector;
+    v.normalize();
+  }
+
+  // In rads
+  float theta()
+  {
+    return acos(v(2));
+  }
+
+  // In rads
+  float phi()
+  {
+    return atan2(v(1), v(0));
+  }
+
+  Vector2cf stateVector2D()
+  {
+    std::complex<float> alpha = cos(theta()/2);
+    std::complex<float> beta = exp(i*phi()) * sin(theta()/2);
+    return {alpha, beta};
+  }
+
+  float dist(Vector3d other) const
+  {
+    Vector3d diff = v - other;
+    return diff.norm();
+  }
+
+  void set(float argx, float argy, float argz)
+  {
+    v = Vector3d(argx, argy, argz);
+    v.normalize();
+  }
+
+  // in rads
+  void set(float theta, float phi)
+  {
+    float x, y, z = 0;
+    sphericalToCartesian(theta, phi, x, y, z);
+    v = Vector3d(x, y, z);
+  }
+
+  void set(Vector3d vector) {
+    v = vector;
+    v.normalize();
+  }
+
+  // in rads
+  void setTheta(float theta)
+  {
+    set(theta, phi());
+  }
+
+  // in rads
+  void setPhi(float phi)
+  {
+    set(theta(), phi);
+  }
+};
+
+class QuantumState
+{
+private:
+  Coordinates stateCoordinates;
+
+public:
+  QuantumState(Coordinates argStateCoordinates) : stateCoordinates(argStateCoordinates) {}
+  QuantumState() : stateCoordinates(0, 0, 1) {}
+
+  void setCoordinates(Coordinates argStateCoordinates)
+  {
+    stateCoordinates.set(argStateCoordinates.v);
+  }
+
+  Coordinates getCoordinates()
+  {
+    return stateCoordinates;
+  }
+
+  void collapse()
+  {
+    const float theta = stateCoordinates.theta();
+    const float a = (cos(theta) + 1) / 2; // probability of measuring |0>
+    if (a < 0.0001) {
+      stateCoordinates.set(0, 0, -1);
+      return;
+    } else if (a > 0.9999) {
+      stateCoordinates.set(0, 0, 1);
+      return;
+    }
+    const bool is1 = random(0, 100) <= a * a * 100;
+    this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
+  }
+
+  void applyGate(Matrix2cf gate)
+  {
+    Vector2cf stateVector = stateCoordinates.stateVector2D();
+    stateVector = gate * stateVector;
+    stateVector.normalize();
+    stateCoordinates.set(2*acos(abs(stateVector.x())), arg(stateVector.y()) - arg(stateVector.x()));
+  }
+
+  void applyGateType(uint16_t gateType, float rotationDegree = PI)
+  {
+    switch (gateType)
+    {
+    case 1:
+      gateX(-rotationDegree);
+      break;
+    case 2:
+      gateY(-rotationDegree);
+      break;
+    case 3:
+      gateZ(rotationDegree);
+      break;
+    case 4:
+      gateX(rotationDegree);
+      break;
+    case 5:
+      gateY(rotationDegree);
+      break;
+    case 6:
+      gateZ(-rotationDegree);
+      break;
+    case 7:
+      gateH(rotationDegree);
+      break;
+    default:
+      break;
+    }
+  }
+
+  // Rotate PI around the x axis
+  void gateX(float rotationDegree = PI)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << cos(rotationDegree / 2.0f), -sin(rotationDegree / 2.0f) * i,
+        -sin(rotationDegree / 2.0f) * i, cos(rotationDegree / 2.0f); // global phase differs from pauli gates but this doesn't matter for bloch sphere
+    applyGate(gateMatrix);
+  }
+
+  // Rotate PI around the y axis
+  void gateZ(float rotationDegree = PI)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << exp(-i * rotationDegree / 2.0f), 0,
+        0, exp(i * rotationDegree / 2.0f);
+    applyGate(gateMatrix);
+  }
+
+  // Rotate PI around the z axis
+  void gateY(float rotationDegree = PI)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << cos(rotationDegree / 2.0f), -sin(rotationDegree / 2.0f),
+        sin(rotationDegree / 2.0f), cos(rotationDegree / 2.0f);
+    applyGate(gateMatrix);
+  }
+
+  // Rotate PI around the xz axis
+  void gateH(float rotationDegree = PI)
+  {
+    Matrix2cf gateMatrix;
+    gateMatrix << (cos(rotationDegree / 2.0f) - i * sin(rotationDegree / 2.0f) / sqrt(2.0f)), -i * sin(rotationDegree / 2.0f) / sqrt(2.0f),
+        -i * sin(rotationDegree / 2.0f) / sqrt(2.0f), (cos(rotationDegree / 2.0f) + i * sin(rotationDegree / 2.0f) / sqrt(2.0f));
+    applyGate(gateMatrix);
+  }
+};
 
 class Qbead {
 public:
