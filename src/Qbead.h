@@ -254,7 +254,9 @@ void connect_callback(uint16_t conn_handle)
   Serial.println(central_name);
 }
 
+
 namespace Qbead {
+
 
 class Qbead {
 public:
@@ -287,6 +289,7 @@ public:
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
   LSM6DS3 imu;
+
   Adafruit_NeoPixel pixels;
 
   BLEService bleservice;
@@ -332,6 +335,39 @@ public:
     Serial.println(singletoninstance->p_ble);
   }
 
+//  uint16_t interrupt_count = 0; // debug number for tracking tap detection
+  static void tap_isr()
+  {
+    // This function is called when the imu triggers an interrupt. That is: when a tap is detected!
+    // readout XYZ immediately
+    if (!singletoninstance->tapped){ // only process if we haven't processed the last tap
+      singletoninstance->rbuffer[0] = singletoninstance->imu.readFloatAccelX();
+      singletoninstance->rbuffer[1] = singletoninstance->imu.readFloatAccelY();
+      singletoninstance->rbuffer[2] = singletoninstance->imu.readFloatAccelZ();
+      singletoninstance->tapped = true;
+      Serial.println("TAP registerred!");
+    }
+    Serial.println("TAP INTERRUPT!");
+    //
+  }
+
+  void setup_imu(){
+    imu.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60); //* Acc = 416Hz (High-Performance mode)// Turn on the accelerometer
+    // enable XYZ axis tap detection
+    uint8_t TAP_CFG_SETTING = LSM6DS3_ACC_GYRO_TAP_Z_EN_ENABLED | LSM6DS3_ACC_GYRO_TAP_Y_EN_ENABLED | LSM6DS3_ACC_GYRO_TAP_X_EN_ENABLED;
+    imu.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1,0x9E); // Enable detection in X,Y,Z and enable LPF2 filter
+    imu.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);// Set Duration, Quiet and Shock time windows 7F
+    uint8_t thrshold_setting = 0x80 | 0x00 | 0x50; // 0x80 is required. 0x10 | 0x05 = 0x10 is the tap threshold setting (5 bit number)
+    imu.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, thrshold_setting); // set tap threshold
+    imu.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x00); // only do single tap detection
+    imu.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x40); // single-tap interrupt driven to pin 1
+
+    // setup interrupt callback
+    pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
+    attachInterrupt(digitalPinToInterrupt(PIN_LSM6DS3TR_C_INT1), tap_isr, RISING);
+    Serial.print("Enabled IMU interrupt!");
+  }
+
   void begin() {
     singletoninstance = this;
     Serial.begin(9600);
@@ -347,6 +383,8 @@ public:
     } else {
       Serial.println("[ERROR]{IMU} IMU failed to initialize");
     }
+
+    setup_imu();
 
     // BLE Peripheral service setup
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
@@ -521,9 +559,9 @@ public:
   }
 
   void readIMU(bool print=true) {
-    rbuffer[0] = imu.readFloatAccelX();
-    rbuffer[1] = imu.readFloatAccelY();
-    rbuffer[2] = imu.readFloatAccelZ();
+//    rbuffer[0] = global_xyz_when_tapped[0];
+//    rbuffer[1] = global_xyz_when_tapped[1];
+//    rbuffer[2] = global_xyz_when_tapped[2];
     rx = (1-2*sx)*rbuffer[ix];
     ry = (1-2*sy)*rbuffer[iy];
     rz = (1-2*sz)*rbuffer[iz];
@@ -533,17 +571,17 @@ public:
     float T_new = micros();
     float delta = T_new - T_imu;
     T_imu = T_new;
-    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
-    if (delta > 100000) {
+//    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
+//    if (delta > 100000) {
       x = rx;
       y = ry;
       z = rz;
-    } else {
-      float d = delta/T;
-      x = d*rx+(1-d)*x;
-      y = d*ry+(1-d)*y;
-      z = d*rz+(1-d)*z;
-    }
+//    } else {
+//      float d = delta/T;
+//      x = d*rx+(1-d)*x;
+//      y = d*ry+(1-d)*y;
+//      z = d*rz+(1-d)*z;
+//    }
     float mag2 = x*x+y*y+z*z;
 
     t_acc = theta(x, y, z)*180/3.14159;
@@ -575,13 +613,13 @@ public:
     rbuffer[2] = z;
     blecharacc.write(rbuffer, 3*sizeof(float));
 
-    tapped = abs(rawmag2-1) > tap_threshold && millis()-last_tap>tap_debounce;
-
-    if (tapped)
-    {
-      last_tap = millis();
-      blecharacc.write(rbuffer, 3*sizeof(float));
-    }
+//    tapped = abs(rawmag2-1) > tap_threshold && millis()-last_tap>tap_debounce;
+//
+//    if (tapped)
+//    {
+//      last_tap = millis();
+//      blecharacc.write(rbuffer, 3*sizeof(float));
+//    }
 
     for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
     {
@@ -592,6 +630,7 @@ public:
       }
     }
   }
+
 
   void startBLEadv(void)
   {
