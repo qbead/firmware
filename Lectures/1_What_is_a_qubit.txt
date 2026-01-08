@@ -1,0 +1,6 @@
+- Introduce CBit and information representation with it, such as bytes
+- Do the measurement classical example
+- Introduce the qubit and bloch sphere
+- Do example on qubit_states
+- Explain measurement in quantum
+- Do the measurement quantum example
