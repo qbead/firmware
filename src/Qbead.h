@@ -304,6 +304,9 @@ public:
   const bool sx, sy, sz;
   float rbuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
+  float ax, ay, az;         // filtered angular acc. in units of kdegrees/s^2
+  float wx, wy, wz, wrx, wry, wrz; // filtered and raw angular vel, in units of degrees/s (check units)
+  float pwx, pwy, pwz;      //previous angular vel values for angular acc. calculation
   float t_acc, p_acc;        // theta and phi according to gravity
   float T_imu;               // last update from the IMU
 
@@ -589,6 +592,70 @@ public:
       {
         blecharacc.notify(rbuffer, 3*sizeof(float));
         tapped && blechartap.notify(rbuffer, 3*sizeof(float));
+      }
+    }
+  }
+
+  void readIMU1(bool print=true) {
+    rbuffer[0] = imu.readFloatGyroX();
+    rbuffer[1] = imu.readFloatGyroY();
+    rbuffer[2] = imu.readFloatGyroZ();
+    
+    wrx = (1-2*sx)*rbuffer[ix];
+    wry = (1-2*sy)*rbuffer[iy];
+    wrz = (1-2*sz)*rbuffer[iz];
+
+    float T_new = micros();
+    float delta = T_new - T_imu;
+    T_imu = T_new;
+    const float T = 100000;
+
+    if (delta > 100000) {
+      wx = wrx;
+      wy = wry;
+      wz = wrz;
+    } else {
+      float d = delta/T;
+      wx = d*wrx+(1-d)*wx;
+      wy = d*wry+(1-d)*wy;
+      wz = d*wrz+(1-d)*wz;
+    }
+
+    ax = (wx-pwx)/(delta/1e3); //  in units of kilodegrees per second^2 so values are not too large
+    ay = (wy-pwy)/(delta/1e3);
+    az = (wz-pwz)/(delta/1e3);
+
+    pwx = wx;
+    pwy = wy;
+    pwz = wz;
+
+    t_acc = theta(ax, ay, az)*180/3.14159;
+    p_acc = phi(ax, ay, az)*180/3.14159;
+    if (p_acc<0) {p_acc+=360;}// to bring it to [0,360] range
+
+    if (print) {
+      Serial.print(ax);
+      Serial.print("\t");
+      Serial.print(ay);
+      Serial.print("\t");
+      Serial.print(az);
+      Serial.print("\t-1\t1\t"); //not sure about this line
+      Serial.print(t_acc);
+      Serial.print("\t");
+      Serial.print(p_acc);
+      Serial.print("\t-360\t360\t");
+      Serial.println();
+    }
+
+    rbuffer[0] = wx;
+    rbuffer[1] = wy;
+    rbuffer[2] = wz;
+    blecharacc.write(rbuffer, 3*sizeof(float));
+    for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
+    {
+      if ( Bluefruit.connected(conn_hdl) && blecharacc.notifyEnabled(conn_hdl) )
+      {
+        blecharacc.notify(rbuffer, 3*sizeof(float));
       }
     }
   }
