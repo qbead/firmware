@@ -256,6 +256,140 @@ void connect_callback(uint16_t conn_handle)
 
 namespace Qbead {
 
+class Coordinates
+{
+public:
+  float x, y, z;
+
+  Coordinates(float argx, float argy, float argz)
+  {
+    x = argx;
+    y = argy;
+    z = argz;
+  }
+  Coordinates(float theta, float phi)
+  {
+    if (!checkThetaAndPhi(theta, phi))
+    {
+      Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+      x = 0;
+      y = 0;
+      z = 1;
+      return;
+    }
+    theta = theta*M_PI/180;
+    phi = phi*M_PI/180;
+
+    x = round(sin(theta) * cos(phi) * 1000) / 1000;
+    y = round(sin(theta) * sin(phi) * 1000) / 1000;
+    z = round(cos(theta) * 1000) / 1000;
+  }
+
+  float theta()
+  {
+    float ll = x * x + y * y + z * z;
+    float l = sqrt(ll);
+    float theta = acos(z / l);
+    return theta*180/M_PI;
+  }
+
+  float phi()
+  {
+    float phi = atan2(y, x);
+    phi = phi*180/M_PI;
+    if (phi<0) {phi+=360;}// to bring it to [0,360] range
+    return phi;
+  }
+
+  void set(float argx, float argy, float argz)
+  {
+    x = argx;
+    y = argy;
+    z = argz;
+  }
+
+  void set(float theta, float phi)
+  {
+    if (!checkThetaAndPhi(theta, phi))
+    {
+      Serial.println("Theta or Phi out of range when creating coordinates class, initializing as 1");
+      x = 0;
+      y = 0;
+      z = 1;
+      return;
+    }
+    theta = theta*M_PI/180;
+    phi = phi*M_PI/180;
+    
+    x = round(sin(theta) * cos(phi) * 1000) / 1000;
+    y = round(sin(theta) * sin(phi) * 1000) / 1000;
+    z = round(cos(theta) * 1000) / 1000;
+  }
+};
+
+class QuantumState
+{
+private:
+  Coordinates stateCoordinates;
+
+public:
+  QuantumState(Coordinates argStateCoordinates) : stateCoordinates(argStateCoordinates) {}
+  QuantumState() : stateCoordinates(0, 0, 1) {}
+
+  void setCoordinates(Coordinates argStateCoordinates)
+  {
+    stateCoordinates.set(argStateCoordinates.x, argStateCoordinates.y, argStateCoordinates.z);
+  }
+
+  Coordinates getCoordinates()
+  {
+    return stateCoordinates;
+  }
+
+  int collapse()
+  {
+    const float theta = stateCoordinates.theta();
+    const float a = cos(theta / 2);
+    const bool is1 = random(0, 100) < a * a * 100;
+    this->stateCoordinates.set(0, 0, is1 ? 1 : -1);
+    return is1 ? 1 : 0;
+  }
+
+  void gateX()
+  {
+    float rotatedTheta = 180 - stateCoordinates.theta();
+    float rotatedPhi = 360 - stateCoordinates.phi();
+    stateCoordinates.set(rotatedTheta, rotatedPhi);
+  }
+
+  void gateZ()
+  {
+    float rotatedPhi = 180 - stateCoordinates.phi();
+    if (rotatedPhi < 0)
+    {
+      rotatedPhi += 360;
+    }
+    stateCoordinates.set(stateCoordinates.theta(), rotatedPhi);
+  }
+
+  void gateY()
+  {
+    float rotatedTheta = 180 - stateCoordinates.theta();
+    float rotatedPhi = 180 - stateCoordinates.phi();
+    if (rotatedPhi < 0)
+    {
+      rotatedPhi += 360;
+    }
+    stateCoordinates.set(rotatedTheta, rotatedPhi);
+  }
+
+  void gateH()
+  {
+    stateCoordinates.set(stateCoordinates.z, stateCoordinates.y, stateCoordinates.x); //flip x and z axis
+  }
+
+};
+
 class Qbead {
 public:
   Qbead(const uint16_t pin00 = QB_LEDPIN,
