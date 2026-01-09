@@ -10,6 +10,8 @@ https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
 https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
 ```
 
+Then, install the board via Arduino IDE => Tools => Board => Boards Manager... and install "Seeed nRF52 Boards". When you plug in a qbead, the arduino IDE should recognize it as a Seeed XIAO nRF52840 Sense. 
+
 ### Packages
 Add the following packages to Arduino IDE => Library Manager:
 - Adafruit NeoPixel
