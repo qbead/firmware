@@ -38,14 +38,11 @@ void loop() {
 
     // Show the result.
     bead.show();
-    display_ready = true;
-  // delay(500);
-  // ### Check for taps
-  // if (bead.tapped) {
-  if (bead.tapped){
-    bead.readIMU();
+
+  if (bead.wasTapped()){
     bead.clear();
-    BlochVector acc_vector(bead.x, bead.y, bead.z);
+    BlochVector acc_vector(bead.xWhenTapped, bead.yWhenTapped, bead.zWhenTapped);
+    
     float probability = pow(innerProductAbs(current_state, acc_vector),2);
     float threshold = random(0, 100)/100.0f;
     float identity_threshold = 1;

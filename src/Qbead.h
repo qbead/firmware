@@ -23,6 +23,13 @@
 #define QB_SY 0
 #define QB_SZ 0
 
+// add some missing definitions for the LSM6DS3 filter settings
+#define LSM6DS3_ACC_GYRO_LPF2_XL_EN 0x80
+#define LSM6DS3_ACC_GYRO_LPF2_XL_CUT_ODR_BY_50 0x00
+#define LSM6DS3_ACC_GYRO_LPF2_XL_CUT_ODR_BY_100 0x20
+#define LSM6DS3_ACC_GYRO_LPF2_XL_CUT_ODR_BY_9 0x40
+#define LSM6DS3_ACC_GYRO_LPF2_XL_CUT_ODR_BY_400 0x60
+
 #define QB_MAX_PRPH_CONNECTION 2
 
 const uint8_t QB_UUID_SERVICE[] =
@@ -306,6 +313,8 @@ public:
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
   float rbuffer[3];
+  float positionWhenTapped[3]; // internal
+  float xWhenTapped, yWhenTapped, zWhenTapped; // set when wasTapped is called
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float t_acc, p_acc;        // theta and phi according to gravity
   float T_imu;               // last update from the IMU
@@ -335,32 +344,20 @@ public:
     Serial.println(singletoninstance->p_ble);
   }
 
-//  uint16_t interrupt_count = 0; // debug number for tracking tap detection
-  static void tap_isr()
-  {
-    // This function is called when the imu triggers an interrupt. That is: when a tap is detected!
-    // readout XYZ immediately
-    if (!singletoninstance->tapped){ // only process if we haven't processed the last tap
-      singletoninstance->rbuffer[0] = singletoninstance->imu.readFloatAccelX();
-      singletoninstance->rbuffer[1] = singletoninstance->imu.readFloatAccelY();
-      singletoninstance->rbuffer[2] = singletoninstance->imu.readFloatAccelZ();
-      singletoninstance->tapped = true;
-      Serial.println("TAP registerred!");
-    }
-    Serial.println("TAP INTERRUPT!");
-    //
-  }
 
-  void setup_imu(){
-    imu.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x60); //* Acc = 416Hz (High-Performance mode)// Turn on the accelerometer
+  void setup_imu_for_tap_detection(){
+    imu.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, LSM6DS3_ACC_GYRO_ODR_XL_416Hz); //* Acc = 416Hz (High-Performance mode)// Turn on the accelerometer
+    imu.writeRegister(LSM6DS3_ACC_GYRO_CTRL2_G, LSM6DS3_ACC_GYRO_ODR_G_POWER_DOWN); // disable gyroscope to save power
     // enable XYZ axis tap detection
-    uint8_t TAP_CFG_SETTING = LSM6DS3_ACC_GYRO_TAP_Z_EN_ENABLED | LSM6DS3_ACC_GYRO_TAP_Y_EN_ENABLED | LSM6DS3_ACC_GYRO_TAP_X_EN_ENABLED;
-    imu.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1,0x9E); // Enable detection in X,Y,Z and enable LPF2 filter
-    imu.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7F);// Set Duration, Quiet and Shock time windows 7F
-    uint8_t thrshold_setting = 0x80 | 0x00 | 0x50; // 0x80 is required. 0x10 | 0x05 = 0x10 is the tap threshold setting (5 bit number)
+    uint8_t TAP_CFG_SETTING = LSM6DS3_ACC_GYRO_TIMER_EN_ENABLED | LSM6DS3_ACC_GYRO_TAP_Z_EN_ENABLED
+    | LSM6DS3_ACC_GYRO_TAP_Y_EN_ENABLED | LSM6DS3_ACC_GYRO_TAP_X_EN_ENABLED;
+    imu.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1,TAP_CFG_SETTING); // Enable tap detection in X,Y,Z
+    imu.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, LSM6DS3_ACC_GYRO_SHOCK_MASK&0b11);// Set shock time window.
+    uint8_t thrshold_setting = 8; // number between 0 and 31
     imu.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, thrshold_setting); // set tap threshold
-    imu.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, 0x00); // only do single tap detection
-    imu.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x40); // single-tap interrupt driven to pin 1
+    imu.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, LSM6DS3_ACC_GYRO_SINGLE_DOUBLE_TAP_DOUBLE_TAP); // only do single tap detection. Seems like the naming is incorrect?
+    imu.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, LSM6DS3_ACC_GYRO_INT1_SINGLE_TAP_ENABLED); // single-tap interrupt driven to pin 1
+    imu.writeRegister(LSM6DS3_ACC_GYRO_CTRL8_XL, LSM6DS3_ACC_GYRO_LPF2_XL_EN | LSM6DS3_ACC_GYRO_LPF2_XL_CUT_ODR_BY_400); // enable low pass filter and set cutoff frequency to datarate/400
 
     // setup interrupt callback
     pinMode(PIN_LSM6DS3TR_C_INT1, INPUT);
@@ -384,7 +381,7 @@ public:
       Serial.println("[ERROR]{IMU} IMU failed to initialize");
     }
 
-    setup_imu();
+    setup_imu_for_tap_detection();
 
     // BLE Peripheral service setup
     Bluefruit.begin(QB_MAX_PRPH_CONNECTION, 0);
@@ -558,10 +555,43 @@ public:
     }
   }
 
+  bool wasTapped(){
+    // return true if IMU detected a tap since the last time wasTapped() was called
+    bool wasTapped = tapped;
+    // set tapped to false, so that the next time this function is called, it will return false
+    tapped = false;
+    // save tapped location
+    if (wasTapped){
+      xWhenTapped = positionWhenTapped[ix];
+      yWhenTapped = positionWhenTapped[iy];
+      zWhenTapped = positionWhenTapped[iz];
+    }
+    return wasTapped;
+  }
+
+  static void tap_isr()
+  {
+    // This function is called when the imu triggers an interrupt. That is: when a tap is detected!
+    // we have to refer to the singletoninstance if the qbead here, because the one and only qbead object does not
+    // exist when this isr is defined.
+    // readout XYZ immediately
+    // we could choose to only readout XYZ when we haven't yet processed the last tap
+    // for now, let's just update the position everytime we tap
+    singletoninstance->positionWhenTapped[0] = singletoninstance->imu.readFloatAccelX();
+    singletoninstance->positionWhenTapped[1] = singletoninstance->imu.readFloatAccelY();
+    singletoninstance->positionWhenTapped[2] = singletoninstance->imu.readFloatAccelZ();
+    singletoninstance->tapped = true;
+
+//    Serial.println("TAP registerred!");
+//    Serial.println("TAP INTERRUPT!");
+    //
+  }
+
+
   void readIMU(bool print=true) {
-//    rbuffer[0] = global_xyz_when_tapped[0];
-//    rbuffer[1] = global_xyz_when_tapped[1];
-//    rbuffer[2] = global_xyz_when_tapped[2];
+    rbuffer[0] = imu.readFloatAccelX();
+    rbuffer[1] = imu.readFloatAccelY();
+    rbuffer[2] = imu.readFloatAccelZ();
     rx = (1-2*sx)*rbuffer[ix];
     ry = (1-2*sy)*rbuffer[iy];
     rz = (1-2*sz)*rbuffer[iz];
@@ -571,17 +601,17 @@ public:
     float T_new = micros();
     float delta = T_new - T_imu;
     T_imu = T_new;
-//    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
-//    if (delta > 100000) {
+    const float T = 100000; // 100 ms // TODO make the filter timeconstant configurable
+    if (delta > 100000) {
       x = rx;
       y = ry;
       z = rz;
-//    } else {
-//      float d = delta/T;
-//      x = d*rx+(1-d)*x;
-//      y = d*ry+(1-d)*y;
-//      z = d*rz+(1-d)*z;
-//    }
+    } else {
+      float d = delta/T;
+      x = d*rx+(1-d)*x;
+      y = d*ry+(1-d)*y;
+      z = d*rz+(1-d)*z;
+    }
     float mag2 = x*x+y*y+z*z;
 
     t_acc = theta(x, y, z)*180/3.14159;
