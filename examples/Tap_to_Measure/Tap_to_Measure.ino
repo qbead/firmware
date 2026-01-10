@@ -38,9 +38,9 @@ void loop() {
 
   // Show the result.
   bead.show();
-
-  // ### Check for taps
-  if (bead.tapped) {
+  // for testing purposes just readout the battery level every loop now
+  bead.measureBattery();
+  if (bead.tapped){
     bead.clear();
     BlochVector acc_vector(bead.x, bead.y, bead.z);
     float probability = pow(innerProductAbs(current_state, acc_vector),2);

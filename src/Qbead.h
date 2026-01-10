@@ -8,6 +8,8 @@
 #include <math.h>
 
 #include <bluefruit.h>
+#include <QbeadBattery.h>
+
 
 // default configs
 // TODO make them ifndef
@@ -281,12 +283,16 @@ public:
         blecharcol(QB_UUID_COL_CHAR),
         blecharsph(QB_UUID_SPH_CHAR),
         blecharacc(QB_UUID_ACC_CHAR),
-        blechartap(QB_UUID_TAP_CHAR)
+        blechartap(QB_UUID_TAP_CHAR),
+        blecharbatlvl(UUID16_CHR_BATTERY_LEVEL)
         {}
 
   static Qbead *singletoninstance; // we need a global singleton static instance because bluefruit callbacks do not support context variables -- thankfully this is fine because there is indeed only one Qbead in existence at any time
 
   LSM6DS3 imu;
+
+  XiaoBattery battery;
+
   Adafruit_NeoPixel pixels;
 
   BLEService bleservice;
@@ -294,6 +300,7 @@ public:
   BLECharacteristic blecharsph;
   BLECharacteristic blecharacc;
   BLECharacteristic blechartap;
+  BLECharacteristic blecharbatlvl;
   uint8_t connection_count = 0;
 
   const uint8_t nsections;
@@ -302,6 +309,7 @@ public:
   const uint8_t phi_quant;
   const uint8_t ix, iy, iz;
   const bool sx, sy, sz;
+  uint8_t bat_buff[1];
   float rbuffer[3];
   float x, y, z, rx, ry, rz; // filtered and raw acc, in units of g
   float t_acc, p_acc;        // theta and phi according to gravity
@@ -383,7 +391,30 @@ public:
     blechartap.setFixedLen(3*sizeof(float));
     blechartap.begin();
     blechartap.write(zerobuffer20, 3*sizeof(float));
+    // BLE Characteristic battery level
+    blecharbatlvl.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    blecharbatlvl.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    blecharbatlvl.setUserDescriptor("battery level");
+    blecharbatlvl.setFixedLen(1*sizeof(uint8_t));
+    blecharbatlvl.begin();
+    blecharbatlvl.write(zerobuffer20, sizeof(uint8_t));
     startBLEadv();
+  }
+
+  void measureBattery(){
+    // if you measure the voltage twice in a row, the second time, the voltage will be 0.2V lower.
+    float percentage = battery.GetBatteryLevel();
+
+    float voltage = battery.GetBatteryVoltage();
+    bool charging = battery.IsChargingBattery();
+    bat_buff[0] = uint8_t(percentage);
+    Serial.println("battery voltage");
+    Serial.print(voltage);
+    Serial.print(", ");
+    Serial.print(charging);
+    Serial.print(", ");
+    Serial.println(percentage);
+    blecharbatlvl.write(bat_buff, sizeof(uint8_t));
   }
 
   void clear() {
