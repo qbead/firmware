@@ -4,9 +4,9 @@
 #define BAT_HIGH_CHARGE 22  // HIGH for 50mA, LOW for 100mA
 #define BAT_CHARGE_STATE 23 // LOW for charging, HIGH not charging
 
-class Xiao {
+class XiaoBattery {
 public:
-  Xiao();
+  XiaoBattery();
   float GetBatteryVoltage();
   bool IsChargingBattery();
   float GetBatteryLevel();
@@ -16,7 +16,7 @@ private:
   float minVoltage = 3.06;
 };
 
-Xiao::Xiao() {
+XiaoBattery::XiaoBattery() {
   pinMode(VBAT_ENABLE, OUTPUT);
   pinMode(BAT_CHARGE_STATE, INPUT);
 
@@ -25,7 +25,7 @@ Xiao::Xiao() {
 
 #define VBAT_MV_PER_LBS (0.003395996F)
 
-float Xiao::GetBatteryVoltage() {
+float XiaoBattery::GetBatteryVoltage() {
   digitalWrite(VBAT_ENABLE, LOW);
   // might want to wait very briefly for the voltage to settle
   uint32_t adcCount = analogRead(PIN_VBAT);
@@ -37,9 +37,9 @@ float Xiao::GetBatteryVoltage() {
   return vBat;
 }
 
-float Xiao::GetBatteryLevel() {
+float XiaoBattery::GetBatteryLevel() {
   float batPercentage = (GetBatteryVoltage()-minVoltage)/(maxVoltage - minVoltage) * 100;
   return batPercentage;
 }
 
-bool Xiao::IsChargingBattery() { return digitalRead(BAT_CHARGE_STATE) == LOW; }
+bool XiaoBattery::IsChargingBattery() { return digitalRead(BAT_CHARGE_STATE) == LOW; }

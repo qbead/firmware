@@ -291,7 +291,7 @@ public:
 
   LSM6DS3 imu;
 
-  Xiao battery;
+  XiaoBattery battery;
 
   Adafruit_NeoPixel pixels;
 
