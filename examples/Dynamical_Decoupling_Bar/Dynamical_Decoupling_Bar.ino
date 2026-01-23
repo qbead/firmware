@@ -91,6 +91,7 @@ void loop() {
   if (bead.wasTapped()) {
     Serial.println("TAP");
     bar_visible = !bar_visible;
+    spread = 0;
   }
 
   bar_visible = bar_visible || (millis() < 5000);
