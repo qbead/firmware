@@ -62,7 +62,7 @@ void loop() {
     }
   }
 
-  float delta = max(min(millis() - last_tap, 2000), 0) / 2000.0;
+  float delta = max(min(millis() - last_tap, 10000), 0) / 10000.0;
   uint32_t color = addColor(scaleColor(1-delta, tap_color), scaleColor(delta, white));
   bead.setBloch_deg(current_state, color);
 
