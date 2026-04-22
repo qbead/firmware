@@ -510,7 +510,7 @@ public:
       whentapped_buffer[2] = imu.readFloatAccelZ();
       for (uint16_t conn_hdl=0; conn_hdl < QB_MAX_PRPH_CONNECTION; conn_hdl++)
       {
-        if ( Bluefruit.connected(conn_hdl) && singletoninstance->blecharacc.notifyEnabled(conn_hdl) )
+        if ( Bluefruit.connected(conn_hdl) && singletoninstance->blechartap.notifyEnabled(conn_hdl) )
         {
           singletoninstance->blechartap.notify(singletoninstance->whentapped_buffer, 3*sizeof(float));
         }
