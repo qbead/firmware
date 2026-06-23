@@ -28,6 +28,8 @@ void setup() {
 // The loop function is called repeatedly until the Qbead is powered off.
 // It is used to read the IMU and update the current state of the game.
 void loop() {
+  bead.measureBattery();
+
   static long last_tap = 0;
   static uint32_t tap_color = white;
 
