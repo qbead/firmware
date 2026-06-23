@@ -1,0 +1,228 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="description" content="qbead notification tracker">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>QBead Measurements</title>
+        <style>
+          #log {
+        height: 200px;
+        overflow-y: scroll;
+      }
+          </style>
+    </head>
+    <body>
+
+
+        <form>
+            <button id="startNotifications">Start connection</button>
+            <button id="stopNotifications">Stop connection</button>
+        </form>
+
+        <h3>Measurements</h3>
+        <div>
+          <pre id="log"></pre>
+        </div>
+        <canvas id="myChart" style="width:100%;max-width:700px"></canvas>
+
+
+        <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.js">
+        </script>
+
+        <script>
+            window.maxmeasurements = 0;
+            window.measurements = [0, 0]
+            const myChart = new Chart("myChart", {
+                type: "bar",
+                data: {
+                    labels: ["0", "1"],
+                    datasets: [{
+                        data: window.measurements,
+                        backgroundColor: ["red", "green"]
+                    }]
+                },
+                options: {
+                    scales: {
+                        yAxes: [{
+                            ticks: {
+                                beginAtZero: true,
+                                max: window.maxmeasurements+1
+                            }
+                        }]
+                    },
+                    legend: {
+                        display: false
+                    },
+                }
+            });
+            window.chart = myChart;
+        </script>
+            
+            <script>
+              var qbeadTracker = {
+                log: function() {
+                  var line = Array.prototype.slice.call(arguments).map(function(argument) {
+                    return typeof argument === 'string' ? argument : JSON.stringify(argument);
+                  }).join(' ');
+            
+                  document.querySelector('#log').textContent = line + '\n';
+                  document.querySelector('#log').scrollTop = document.querySelector('#log').scrollHeight;
+                },
+            
+                clearLog: function() {
+                  document.querySelector('#log').textContent = '';
+                },
+            
+                setStatus: function(status) {
+                  document.querySelector('#status').textContent = status;
+                },
+            
+                setContent: function(newContent) {
+                  var content = document.querySelector('#content');
+                  while(content.hasChildNodes()) {
+                    content.removeChild(content.lastChild);
+                  }
+                  content.appendChild(newContent);
+                }
+              };
+          </script>
+  
+          <script>
+              var accCharacteristic;
+              var sphCharacteristic;
+              var colCharacteristic;
+              
+              function onStartButtonClick() {
+                let serviceUuid = "e30c1fc6-359c-12be-2544-63d6aa088d45";
+              
+                let accUuid = "e30c1fc9-359c-12be-2544-63d6aa088d45";
+                let sphUuid = "e30c1fc8-359c-12be-2544-63d6aa088d45";
+                let colUuid = "e30c1fc7-359c-12be-2544-63d6aa088d45";
+                let measUuid = "e30c1fc5-359c-12be-2544-63d6aa088d45";
+              
+                log('Requesting Bluetooth Device...');
+                navigator.bluetooth.requestDevice(
+                  {
+                    filters: [{services: [serviceUuid]}]
+                  }
+                )
+                .then(device => {
+                  log('Connecting to GATT Server...');
+                  return device.gatt.connect();
+                })
+                .then(server => {
+                  log('Getting Service...');
+                  return server.getPrimaryService(serviceUuid);
+                })
+                .then(service => {
+                  log('Getting Characteristics...');
+                  service.getCharacteristic(colUuid).then(ch => {colCharacteristic=ch;});
+                  return service.getCharacteristic(measUuid);
+                })
+                .then(characteristic => {
+                  accCharacteristic = characteristic;
+                  return accCharacteristic.startNotifications().then(_ => {
+                    log('> Notifications started');
+                    accCharacteristic.addEventListener('characteristicvaluechanged',
+                        handleNotifications);
+                  });
+                })
+                .catch(error => {
+                  log('Argh! ' + error);
+                });
+              }
+              
+              function onStopButtonClick() {
+                if (accCharacteristic) {
+                  accCharacteristic.stopNotifications()
+                  .then(_ => {
+                    log('> Notifications stopped');
+                    accCharacteristic.removeEventListener('characteristicvaluechanged',
+                        handleNotifications);
+                  })
+                  .catch(error => {
+                    log('Argh! ' + error);
+                  });
+                }
+              }
+              
+              function onPhiRangeChange() {
+                myDescriptor.writeValue(encoder.encode(value))
+                .then(_ => {
+                  log('> Characteristic User Description changed to: ' + value);
+                })
+                .catch(error => {
+                  log('Argh! ' + error);
+                });
+              }
+              
+              
+              function handleNotifications(event) {
+                new Uint8Array(event.target.value.buffer).reverse();
+                let value = event.target.value;
+                let meas = value.getInt32(0);
+                if (meas == 0) {
+                  window.measurements = [window.measurements[0]+1, window.measurements[1]];
+                } else {
+                  window.measurements = [window.measurements[0], window.measurements[1]+1];
+                }
+                window.maxmeasurements = Math.max(window.measurements[0], window.measurements[1]);
+                log('> measured: ' + meas);
+                window.chart.data.datasets[0].data = window.measurements;
+                window.chart.options.scales.yAxes[0].ticks.max = window.maxmeasurements+1;
+                window.chart.update();
+                console.log(window.measurements, window.maxmeasurements);
+              }
+              </script>
+              
+              
+              <script>
+                document.querySelector('#startNotifications').addEventListener('click', function(event) {
+                  event.stopPropagation();
+                  event.preventDefault();
+              
+                  if (isWebBluetoothEnabled()) {
+                    qbeadTracker.clearLog();
+                    onStartButtonClick();
+                  }
+                });
+                document.querySelector('#stopNotifications').addEventListener('click', function(event) {
+                  event.stopPropagation();
+                  event.preventDefault();
+              
+                  if (isWebBluetoothEnabled()) {
+                    onStopButtonClick();
+                  }
+                });
+              </script>
+              
+              <script>
+                document.querySelector('form').addEventListener('submit', function(event) {
+                  event.stopPropagation();
+                  event.preventDefault();
+              
+                  if (isWebBluetoothEnabled()) {
+                    qbeadTracker.clearLog();
+                    onButtonClick();
+                  }
+                });
+              </script>
+              
+              <script>
+                log = qbeadTracker.log;
+              
+                function isWebBluetoothEnabled() {
+                  if (navigator.bluetooth) {
+                    return true;
+                  } else {
+                    qbeadTracker.setStatus('Web Bluetooth API is not available.\n' +
+                        'Please make sure the "Experimental Web Platform features" flag is enabled.');
+                    return false;
+                  }
+                }
+              </script>
+  
+      </body>
+</html>
